@@ -26,12 +26,14 @@ func Open(ctx context.Context, dataDir string, log waLog.Logger) (*sqlstore.Cont
 	}
 
 	dbPath := filepath.Join(dataDir, DBFileName)
-	// busy_timeout tells SQLite to wait (up to 5s) for a lock to clear
-	// instead of failing immediately with SQLITE_BUSY — whatsmeow's
-	// internal goroutines can touch the device store concurrently within
-	// a single process (e.g. during logout's multi-table delete), and
-	// the pure-Go sqlite driver doesn't set this by default.
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)", dbPath)
+	// WAL (write-ahead logging) allows concurrent readers alongside a
+	// single writer, unlike SQLite's default rollback journal mode —
+	// important here because whatsmeow's initial sync does history-sync
+	// media cleanup, app-state fetching, and incoming message writes
+	// concurrently, and the default mode was hitting SQLITE_BUSY even
+	// with a busy_timeout set. busy_timeout is still set as a fallback
+	// for the cases WAL alone doesn't cover (e.g. two writers).
+	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)", dbPath)
 
 	container, err := sqlstore.New(ctx, "sqlite", dsn, log)
 	if err != nil {

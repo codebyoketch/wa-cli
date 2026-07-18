@@ -14,6 +14,7 @@ import (
 	"github.com/codebyoketch/wa-cli/internal/chatstore"
 	waerrors "github.com/codebyoketch/wa-cli/internal/errors"
 	"github.com/codebyoketch/wa-cli/internal/qr"
+	"github.com/codebyoketch/wa-cli/internal/safety"
 )
 
 type Client struct {
@@ -64,9 +65,18 @@ func (c *Client) ingestHistorySync(evt *events.HistorySync) {
 		}
 
 		name := conv.GetName()
+		msgs := conv.GetMessages()
+
+		// Skip pure noise: no name and no message history at all. These
+		// show up as bare @lid conversation stubs (e.g. group members
+		// using WhatsApp's privacy-ID feature) that aren't real chats
+		// worth surfacing in `wa chat list`.
+		if name == "" && len(msgs) == 0 {
+			continue
+		}
+
 		var lastAt int64
 		var preview string
-		msgs := conv.GetMessages()
 		if len(msgs) > 0 {
 			last := msgs[len(msgs)-1].GetMessage()
 			if ts := last.GetMessageTimestamp(); ts > 0 {
@@ -89,12 +99,21 @@ func (c *Client) ingestHistorySync(evt *events.HistorySync) {
 	}
 }
 
+// statusBroadcastJID is WhatsApp's pseudo-chat for Status/story updates.
+// These aren't real conversations and shouldn't be printed or tracked as
+// chats.
+const statusBroadcastJID = "status@broadcast"
+
 // ingestMessage keeps chatstore current as new messages arrive/are sent
-// after the initial sync (this is what Phase 5's `wa watch` will lean on
-// more heavily; wired in here too so a chat you're mid-conversation with
-// during `wa chat list` still looks current).
+// after the initial sync (this is what wa watch leans on most heavily;
+// wired in here too so a chat you're mid-conversation with during
+// `wa chat list` still looks current).
 func (c *Client) ingestMessage(evt *events.Message) {
 	jid := evt.Info.Chat.String()
+	if jid == statusBroadcastJID {
+		return
+	}
+
 	preview := extractPreview(evt.Message)
 
 	err := c.chats.Upsert(chatstore.Chat{
@@ -105,6 +124,14 @@ func (c *Client) ingestMessage(evt *events.Message) {
 	})
 	if err != nil {
 		c.log.Warnf("chatstore upsert failed for %s: %v", jid, err)
+	}
+
+	// Only count messages from others as unread, not our own outgoing
+	// messages (which also come through as *events.Message).
+	if !evt.Info.IsFromMe {
+		if err := c.chats.IncrementUnread(jid); err != nil {
+			c.log.Warnf("chatstore unread increment failed for %s: %v", jid, err)
+		}
 	}
 }
 
@@ -228,6 +255,102 @@ func (c *Client) Login(ctx context.Context) error {
 
 	fmt.Println("Login successful.")
 	return nil
+}
+
+// Watch keeps a long-running connection open, printing incoming messages
+// and reconnecting on drops, until ctx is cancelled (e.g. Ctrl+C).
+//
+// Given the connection instability observed during Phase 2/3 testing
+// (frequent "Error sending close to websocket" resets, most likely
+// CGNAT-related on some networks), this is deliberately more defensive
+// than SyncChats: it doesn't just trust whatsmeow's built-in reconnect
+// (which may or may not be enabled depending on your pinned version —
+// check `go doc go.mau.fi/whatsmeow.Client` for an EnableAutoReconnect
+// field or similar if reconnects don't happen automatically) — it also
+// watches for *events.Disconnected itself and retries with backoff.
+func (c *Client) Watch(ctx context.Context, guard *safety.Guard) error {
+	if !c.IsLoggedIn() {
+		return waerrors.ErrNotLoggedIn
+	}
+
+	c.WA.AddEventHandler(func(evt interface{}) {
+		switch v := evt.(type) {
+		case *events.Message:
+			c.printIncoming(v, guard)
+		case *events.Connected:
+			fmt.Println("[connected]")
+		case *events.Disconnected:
+			fmt.Println("[disconnected — attempting to reconnect...]")
+			go c.reconnectWithBackoff(ctx)
+		case *events.LoggedOut:
+			fmt.Println("[logged out remotely — run 'wa login' again]")
+		}
+	})
+
+	if err := c.WA.Connect(); err != nil {
+		return waerrors.Wrap(err, "connecting to WhatsApp")
+	}
+	defer c.WA.Disconnect()
+
+	fmt.Println("Watching for new messages. Press Ctrl+C to stop.")
+
+	<-ctx.Done()
+	fmt.Println("\nStopping...")
+	return nil
+}
+
+// reconnectWithBackoff retries WA.Connect() with exponential backoff
+// (capped at 30s) until it succeeds or ctx is cancelled. This is a
+// belt-and-suspenders fallback alongside whatsmeow's own reconnect
+// handling — worth keeping given how unreliable the connection proved
+// to be in earlier testing on some networks.
+func (c *Client) reconnectWithBackoff(ctx context.Context) {
+	backoff := 2 * time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+
+		if err := c.WA.Connect(); err != nil {
+			c.log.Warnf("reconnect attempt failed: %v", err)
+			if backoff < 30*time.Second {
+				backoff *= 2
+			}
+			continue
+		}
+		fmt.Println("[reconnected]")
+		return
+	}
+}
+
+// printIncoming prints one incoming message and marks its sender known
+// (so a later `wa chat send` reply doesn't trigger the new-recipient
+// confirmation prompt).
+func (c *Client) printIncoming(evt *events.Message, guard *safety.Guard) {
+	if evt.Info.IsFromMe || evt.Info.Chat.String() == statusBroadcastJID {
+		return
+	}
+
+	sender := evt.Info.PushName
+	if sender == "" {
+		sender = evt.Info.Sender.User
+	}
+
+	text := extractPreview(evt.Message)
+	if text == "" {
+		text = "[non-text message]"
+	}
+
+	ts := evt.Info.Timestamp.Local().Format("15:04:05")
+	fmt.Printf("[%s] %s (%s): %s\n", ts, sender, evt.Info.Chat.String(), text)
+
+	if guard != nil {
+		if err := guard.MarkKnown(evt.Info.Sender.String()); err != nil {
+			c.log.Warnf("failed to mark sender known: %v", err)
+		}
+	}
 }
 
 func (c *Client) Logout(ctx context.Context) error {

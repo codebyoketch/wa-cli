@@ -65,6 +65,9 @@ func (s *Store) Upsert(c Chat) error {
 		if !c.IsGroup {
 			c.IsGroup = existing.IsGroup
 		}
+		if c.UnreadCount == 0 {
+			c.UnreadCount = existing.UnreadCount
+		}
 	}
 
 	chats[c.JID] = c
@@ -123,6 +126,23 @@ func (s *Store) Search(query string) ([]Chat, error) {
 	}
 	sortChats(out)
 	return out, nil
+}
+
+// IncrementUnread bumps jid's unread count by one, creating a bare record
+// if it doesn't exist yet (a subsequent Upsert fills in name/preview).
+func (s *Store) IncrementUnread(jid string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	chats, err := s.load()
+	if err != nil {
+		return err
+	}
+	c := chats[jid]
+	c.JID = jid
+	c.UnreadCount++
+	chats[jid] = c
+	return s.save(chats)
 }
 
 // MarkRead zeroes the unread count for jid. No-op if jid isn't known.

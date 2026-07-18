@@ -18,10 +18,22 @@ var chatCmd = &cobra.Command{
 	Short: "List, open, search, and inspect chats",
 }
 
+var chatListNoSync bool
+
 var chatListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List your chats, most recent first",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if chatListNoSync {
+			cs := chatstore.New(a.Config.DataDir)
+			chats, err := cs.List()
+			if err != nil {
+				return err
+			}
+			printChats(chats)
+			return nil
+		}
+
 		chats, err := syncAndLoadChats(cmd)
 		if err != nil {
 			return err
@@ -29,6 +41,11 @@ var chatListCmd = &cobra.Command{
 		printChats(chats)
 		return nil
 	},
+}
+
+func init() {
+	chatListCmd.Flags().BoolVar(&chatListNoSync, "no-sync", false,
+		"read the local chat cache without connecting — use this if 'wa watch' is already running, since WhatsApp only allows one active connection per device")
 }
 
 var chatSearchCmd = &cobra.Command{
@@ -115,7 +132,7 @@ func syncAndLoadChats(cmd *cobra.Command) ([]chatstore.Chat, error) {
 		return nil, err
 	}
 
-	if err := client.SyncChats(ctx, 5*time.Second); err != nil {
+	if err := client.SyncChats(ctx, 2*time.Second); err != nil {
 		return nil, err
 	}
 
