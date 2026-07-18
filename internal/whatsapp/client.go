@@ -148,30 +148,35 @@ func (c *Client) IsLoggedIn() bool {
 	return c.WA.Store.ID != nil
 }
 
-// Login connects and, if unpaired, shows a QR code to scan. It stays
-// connected until the post-pairing sync actually completes (or times out),
-// so the phone has time to commit the linked device — disconnecting right
-// after the QR "success" event is too early and the device never shows up
-// in WhatsApp > Linked Devices.
-func (c *Client) Login(ctx context.Context) error {
-	// Fires once the full connection (including post-pairing sync) is ready.
-	connected := make(chan struct{}, 1)
-	c.WA.AddEventHandler(func(evt interface{}) {
-		switch evt.(type) {
-		case *events.Connected:
-			select {
-			case connected <- struct{}{}:
-			default:
-			}
-		}
-	})
+// Connect establishes the WhatsApp connection and gives it a moment to
+// actually finish before returning. whatsmeow's WA.Connect() only
+// *initiates* the handshake and returns immediately — sending a request
+// right after races a socket that isn't ready yet. We deliberately don't
+// gate this on *events.Connected: in testing it hasn't fired reliably
+// within any reasonable window, even on connections that demonstrably
+// succeeded (confirmed via `wa status` immediately after).
+func (c *Client) Connect(ctx context.Context) error {
+	if err := c.WA.Connect(); err != nil {
+		return waerrors.Wrap(err, "connecting to WhatsApp")
+	}
 
+	select {
+	case <-time.After(5 * time.Second):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return nil
+}
+
+// Login connects and, if unpaired, shows a QR code to scan. It stays
+// connected for a grace period after pairing so WhatsApp has time to
+// commit the linked device and, if a chatstore is attached, deliver the
+// one-time HistorySync payload — disconnecting immediately after the QR
+// "success" event is too early and the device never shows up in
+// WhatsApp > Linked Devices.
+func (c *Client) Login(ctx context.Context) error {
 	if c.IsLoggedIn() {
-		if err := c.WA.Connect(); err != nil {
-			return waerrors.Wrap(err, "connecting to WhatsApp")
-		}
-		<-connected
-		return nil
+		return c.Connect(ctx)
 	}
 
 	qrChan, err := c.WA.GetQRChannel(ctx)
@@ -203,15 +208,25 @@ func (c *Client) Login(ctx context.Context) error {
 		return waerrors.New("login did not complete")
 	}
 
-	// Wait for the actual post-pairing sync to finish, capped so we don't
-	// hang forever if something's wrong.
-	select {
-	case <-connected:
-		fmt.Println("Login successful.")
-	case <-time.After(20 * time.Second):
-		fmt.Println("Paired, but sync is taking a while — check Linked Devices on your phone. If it's not there, run 'wa logout' then 'wa login' again.")
+	// Give WhatsApp time to finish the post-pairing handshake and, if a
+	// chatstore is attached, deliver the one-time HistorySync payload.
+	// This is a fixed wait rather than waiting on *events.Connected —
+	// see Connect()'s comment for why.
+	wait := 15 * time.Second
+	if c.chats != nil {
+		wait = 25 * time.Second
+		fmt.Println("Syncing chat history — this can take a bit on first login...")
+	} else {
+		fmt.Println("Finishing setup...")
 	}
 
+	select {
+	case <-time.After(wait):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	fmt.Println("Login successful.")
 	return nil
 }
 

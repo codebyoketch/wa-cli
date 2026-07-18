@@ -26,7 +26,12 @@ func Open(ctx context.Context, dataDir string, log waLog.Logger) (*sqlstore.Cont
 	}
 
 	dbPath := filepath.Join(dataDir, DBFileName)
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", dbPath)
+	// busy_timeout tells SQLite to wait (up to 5s) for a lock to clear
+	// instead of failing immediately with SQLITE_BUSY — whatsmeow's
+	// internal goroutines can touch the device store concurrently within
+	// a single process (e.g. during logout's multi-table delete), and
+	// the pure-Go sqlite driver doesn't set this by default.
+	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)", dbPath)
 
 	container, err := sqlstore.New(ctx, "sqlite", dsn, log)
 	if err != nil {

@@ -33,7 +33,7 @@ var logoutCmd = &cobra.Command{
 			return nil
 		}
 
-		if err := client.WA.Connect(); err != nil {
+		if err := client.Connect(ctx); err != nil {
 			return err
 		}
 		defer client.Disconnect()
