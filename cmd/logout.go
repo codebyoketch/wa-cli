@@ -11,9 +11,9 @@ import (
 	"github.com/codebyoketch/wa-cli/internal/whatsapp"
 )
 
-var statusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show login status",
+var logoutCmd = &cobra.Command{
+	Use:   "logout",
+	Short: "Logout of WhatsApp",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		dbLog := waLog.Stdout("Database", "WARN", true)
@@ -29,15 +29,24 @@ var statusCmd = &cobra.Command{
 		}
 
 		if !client.IsLoggedIn() {
-			fmt.Println("Not logged in. Run 'wa login' to get started.")
+			fmt.Println("Not logged in.")
 			return nil
 		}
 
-		fmt.Printf("Logged in as %s\n", client.WA.Store.ID.User)
+		if err := client.WA.Connect(); err != nil {
+			return err
+		}
+		defer client.Disconnect()
+
+		if err := client.Logout(ctx); err != nil {
+			return err
+		}
+
+		fmt.Println("Logged out.")
 		return nil
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(logoutCmd)
 }
