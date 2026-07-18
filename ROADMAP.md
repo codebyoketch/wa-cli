@@ -11,10 +11,14 @@ detailed history.
       `internal/logger`, `internal/store`, `internal/version`,
       `internal/errors`.
       **Milestone:** `wa version`, `wa config`.
-- [ ] **Phase 2 — WhatsApp Authentication**: whatsmeow init, SQLite device
+- [x] **Phase 2 — WhatsApp Authentication**: whatsmeow init, SQLite device
       store, QR login, logout, status, session persistence.
-      **Milestone:** `wa login`, `wa logout`, `wa status`.
-- [ ] **Phase 3 — Chats**: list, open, info, search.
+      **Milestone:** `wa login`, `wa logout`, `wa status` — verified against
+      a real account, session persists across runs.
+- [x] **Phase 3 — Chats**: `internal/chatstore` (local JSON index, survives
+      across CLI invocations), `wa chat list/search/info/open`.
+      `open` currently shows info + marks read; full message history is
+      Phase 4/5 territory once sending/receiving exist.
 - [ ] **Phase 4 — Sending Messages**: text, emoji, mentions, reply, forward.
 - [ ] **Phase 5 — Receiving Messages**: event handler, `wa watch`, read
       receipts, typing indicators.
@@ -51,16 +55,17 @@ detailed history.
 
 ## Notes on current implementation
 
-Phase 0/1 use a small hand-rolled command router
-(`internal/cli`) instead of Cobra. The sandbox this scaffold was first
-built in couldn't reach `proxy.golang.org` / `gopkg.in`, which Cobra's
-dependency graph needs. On a machine with normal internet access, swap it
-in with:
+Phases 0/1 originally used a small hand-rolled command router
+(`internal/cli`) because the sandbox they were first built in couldn't
+reach `proxy.golang.org` / `gopkg.in`, which Cobra's dependency graph
+needs. That's since been swapped for real `github.com/spf13/cobra` — the
+project now follows the standard `cobra-cli init` layout: `main.go` at the
+repo root imports `cmd`, and `cmd/` holds one file per command/group
+(`root.go`, `version.go`, `config.go`, `login.go`, `status.go`, `logout.go`,
+`chat.go`), each self-registering onto `rootCmd` via `init()`.
 
-```sh
-go get github.com/spf13/cobra@latest
-```
-
-then rebuild `internal/app`'s command construction against `*cobra.Command`
-— `internal/cli.Command`'s `Run` signature was written to match Cobra's, so
-the migration is mostly a find-and-replace.
+Chat history sync (Phase 3) relies on whatsmeow's `*events.HistorySync`,
+one of its more version-sensitive event types — the field names/shape in
+`internal/whatsapp/client.go`'s `ingestHistorySync` were written against
+the mainline API at the time and may need adjusting against whichever
+whatsmeow version is actually pinned in `go.mod`.

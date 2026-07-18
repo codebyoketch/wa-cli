@@ -23,7 +23,7 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		client, err := whatsapp.New(ctx, container, dbLog)
+		client, err := whatsapp.New(ctx, container, dbLog, nil)
 		if err != nil {
 			return err
 		}

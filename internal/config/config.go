@@ -16,9 +16,12 @@ import (
 
 // Config holds all user-configurable settings for wa-cli.
 type Config struct {
-	LogLevel   string `json:"logLevel"`
-	JSONOutput bool   `json:"jsonOutput"`
-	DataDir    string `json:"dataDir"`
+	// LogLevel is one of "debug", "info", "warn", "error".
+	LogLevel string `json:"logLevel"`
+	// JSONOutput makes all commands default to `--json` formatting.
+	JSONOutput bool `json:"jsonOutput"`
+	// DataDir is where the SQLite session/device store lives.
+	DataDir string `json:"dataDir"`
 
 	// MaxMessagesPerMinute/Hour/Day cap outbound sends to keep wa-cli
 	// behaving like a normal personal client. 0 means "no limit" for that

@@ -3,18 +3,17 @@ package whatsapp
 import (
 	"context"
 	"fmt"
-	"time"
 	"strings"
+	"time"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
-	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"github.com/codebyoketch/wa-cli/internal/chatstore"
-	"github.com/codebyoketch/wa-cli/internal/qr"
 	waerrors "github.com/codebyoketch/wa-cli/internal/errors"
+	"github.com/codebyoketch/wa-cli/internal/qr"
 )
 
 type Client struct {
@@ -59,7 +58,7 @@ func (c *Client) ingestHistorySync(evt *events.HistorySync) {
 		return
 	}
 	for _, conv := range evt.Data.GetConversations() {
-		jid := conv.GetId()
+		jid := conv.GetID()
 		if jid == "" {
 			continue
 		}
@@ -73,7 +72,7 @@ func (c *Client) ingestHistorySync(evt *events.HistorySync) {
 			if ts := last.GetMessageTimestamp(); ts > 0 {
 				lastAt = int64(ts) * 1000
 			}
-			preview = extractPreview(last)
+			preview = extractPreview(last.GetMessage())
 		}
 
 		err := c.chats.Upsert(chatstore.Chat{
@@ -100,7 +99,7 @@ func (c *Client) ingestMessage(evt *events.Message) {
 
 	err := c.chats.Upsert(chatstore.Chat{
 		JID:                jid,
-		IsGroup:             evt.Info.IsGroup,
+		IsGroup:            evt.Info.IsGroup,
 		LastMessageAt:      evt.Info.Timestamp.UnixMilli(),
 		LastMessagePreview: preview,
 	})

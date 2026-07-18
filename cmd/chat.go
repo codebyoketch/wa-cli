@@ -1,0 +1,161 @@
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/spf13/cobra"
+	waLog "go.mau.fi/whatsmeow/util/log"
+
+	"github.com/codebyoketch/wa-cli/internal/chatstore"
+	"github.com/codebyoketch/wa-cli/internal/store"
+	"github.com/codebyoketch/wa-cli/internal/whatsapp"
+)
+
+var chatCmd = &cobra.Command{
+	Use:   "chat",
+	Short: "List, open, search, and inspect chats",
+}
+
+var chatListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List your chats, most recent first",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		chats, err := syncAndLoadChats(cmd)
+		if err != nil {
+			return err
+		}
+		printChats(chats)
+		return nil
+	},
+}
+
+var chatSearchCmd = &cobra.Command{
+	Use:   "search <query>",
+	Short: "Search chats by name",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cs := chatstore.New(a.Config.DataDir)
+		results, err := cs.Search(args[0])
+		if err != nil {
+			return err
+		}
+		printChats(results)
+		return nil
+	},
+}
+
+var chatInfoCmd = &cobra.Command{
+	Use:   "info <jid-or-name>",
+	Short: "Show details for one chat",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		chat, err := resolveChat(args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Printf("JID:            %s\n", chat.JID)
+		fmt.Printf("Name:           %s\n", chat.Name)
+		fmt.Printf("Group:          %t\n", chat.IsGroup)
+		fmt.Printf("Unread:         %d\n", chat.UnreadCount)
+		if chat.LastMessageAt > 0 {
+			fmt.Printf("Last message:   %s\n", time.UnixMilli(chat.LastMessageAt).Format(time.RFC1123))
+		}
+		if chat.LastMessagePreview != "" {
+			fmt.Printf("Last preview:   %s\n", chat.LastMessagePreview)
+		}
+		return nil
+	},
+}
+
+var chatOpenCmd = &cobra.Command{
+	Use:   "open <jid-or-name>",
+	Short: "Open a chat (shows info; message history lands in a later phase)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		chat, err := resolveChat(args[0])
+		if err != nil {
+			return err
+		}
+		cs := chatstore.New(a.Config.DataDir)
+		if err := cs.MarkRead(chat.JID); err != nil {
+			a.Log.Warn("failed to mark chat read", "error", err)
+		}
+		fmt.Printf("%s (%s)\n", chat.Name, chat.JID)
+		if chat.LastMessagePreview != "" {
+			fmt.Printf("Last: %s\n", chat.LastMessagePreview)
+		}
+		fmt.Println("\n(Message history and live reply come in Phase 4/5 — this just opens/marks-read for now.)")
+		return nil
+	},
+}
+
+func init() {
+	chatCmd.AddCommand(chatListCmd, chatSearchCmd, chatInfoCmd, chatOpenCmd)
+	rootCmd.AddCommand(chatCmd)
+}
+
+// syncAndLoadChats connects briefly to pick up any new history/messages,
+// then reads back the local chat store. Kept short (5s) since this runs
+// on every `wa chat list` call — `wa watch` (Phase 5) is the long-running
+// alternative for staying continuously in sync.
+func syncAndLoadChats(cmd *cobra.Command) ([]chatstore.Chat, error) {
+	ctx := context.Background()
+	dbLog := waLog.Stdout("Database", "WARN", true)
+
+	container, err := store.Open(ctx, a.Config.DataDir, dbLog)
+	if err != nil {
+		return nil, err
+	}
+
+	cs := chatstore.New(a.Config.DataDir)
+	client, err := whatsapp.New(ctx, container, dbLog, cs)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := client.SyncChats(ctx, 5*time.Second); err != nil {
+		return nil, err
+	}
+
+	return cs.List()
+}
+
+// resolveChat looks up a chat by exact JID first, falling back to a name
+// search and taking the top match.
+func resolveChat(target string) (chatstore.Chat, error) {
+	cs := chatstore.New(a.Config.DataDir)
+
+	if chat, ok, err := cs.Get(target); err != nil {
+		return chatstore.Chat{}, err
+	} else if ok {
+		return chat, nil
+	}
+
+	results, err := cs.Search(target)
+	if err != nil {
+		return chatstore.Chat{}, err
+	}
+	if len(results) == 0 {
+		return chatstore.Chat{}, fmt.Errorf("no chat found matching %q — try 'wa chat list' first to sync", target)
+	}
+	return results[0], nil
+}
+
+func printChats(chats []chatstore.Chat) {
+	if len(chats) == 0 {
+		fmt.Println("No chats found. Try again after a moment — history may still be syncing.")
+		return
+	}
+	for _, c := range chats {
+		unread := ""
+		if c.UnreadCount > 0 {
+			unread = fmt.Sprintf(" (%d unread)", c.UnreadCount)
+		}
+		fmt.Printf("%-30s %s%s\n", c.Name, c.JID, unread)
+		if c.LastMessagePreview != "" {
+			fmt.Printf("  ↳ %s\n", c.LastMessagePreview)
+		}
+	}
+}
