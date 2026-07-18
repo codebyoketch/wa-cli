@@ -20,8 +20,12 @@ detailed history.
       `open` currently shows info + marks read; full message history is
       Phase 4/5 territory once sending/receiving exist.
 - [ ] **Phase 4 — Sending Messages**: text, emoji, mentions, reply, forward.
-- [ ] **Phase 5 — Receiving Messages**: event handler, `wa watch`, read
-      receipts, typing indicators.
+- [x] **Phase 5 — Receiving Messages**: `wa watch` — long-running
+      connection, prints incoming messages, reconnects on drops with
+      backoff. Built ahead of Phase 4 (out of roadmap order) once
+      connection-reliability testing showed a persistent, reconnecting
+      connection was needed regardless — read receipts / typing
+      indicators not yet implemented.
 - [ ] **Phase 6 — Contacts**: list, info, search.
 - [ ] **Phase 7 — Groups**: list, create, add, remove, info.
 - [ ] **Phase 8 — Media**: send/download/list images, video, audio,
@@ -52,6 +56,34 @@ detailed history.
 - Plugin marketplace
 - End-to-end encrypted local history index
 - Remote mode (connect to a running `wa-cli` instance over SSH)
+
+## Known issues
+
+- **`wa chat list` is not a complete mirror of your WhatsApp inbox.**
+  `HistorySync` only fires once, right after login, and WhatsApp decides
+  what counts as "recent" — older, inactive chats may not appear until
+  they get a new message. `wa chat list` reflects that one-time snapshot
+  plus whatever's arrived live since (via `wa watch` or `chat list`'s own
+  brief syncs), and gets more complete the longer `wa watch` has been
+  running. True backfill of full history needs whatsmeow's on-demand
+  history sync (explicitly requesting older data), which isn't
+  implemented — scoped as a possible future addition to Phase 3, not
+  currently planned.
+- **Only one wa-cli connection can be active at a time, by WhatsApp's
+  design.** WhatsApp allows one active connection per linked device.
+  Running `wa chat list` (or any connecting command) while `wa watch` is
+  running will disconnect `watch` — this isn't fixable client-side, it's
+  how the protocol works. Use `wa chat list --no-sync` to read the local
+  cache without opening a competing connection while `watch` is active.
+- **Connection stability depends heavily on your network.** Testing
+  surfaced frequent `Error sending close to websocket` resets on an
+  Airtel 5G home connection, most likely due to CGNAT (carrier-grade
+  NAT) common on cellular home broadband, which tends to apply short,
+  aggressive timeouts to long-lived connections like WhatsApp's
+  multi-device WebSocket. `wa watch`'s reconnect-with-backoff exists
+  specifically to cope with this; one-shot commands (`chat list`,
+  `login`) are more exposed to it, since they only get a short window
+  before giving up.
 
 ## Notes on current implementation
 
