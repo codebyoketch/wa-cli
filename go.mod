@@ -1,3 +1,3 @@
-module wa-cli
+module github.com/codebyoketch/wa-cli
 
 go 1.25.0
