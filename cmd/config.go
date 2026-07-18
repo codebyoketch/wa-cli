@@ -26,6 +26,10 @@ var configGetCmd = &cobra.Command{
 		fmt.Fprintf(out, "logLevel:   %s\n", a.Config.LogLevel)
 		fmt.Fprintf(out, "jsonOutput: %t\n", a.Config.JSONOutput)
 		fmt.Fprintf(out, "dataDir:    %s\n", a.Config.DataDir)
+		fmt.Fprintf(out, "maxMessagesPerMinute: %d\n", a.Config.MaxMessagesPerMinute)
+		fmt.Fprintf(out, "maxMessagesPerHour:   %d\n", a.Config.MaxMessagesPerHour)
+		fmt.Fprintf(out, "maxMessagesPerDay:    %d\n", a.Config.MaxMessagesPerDay)
+		fmt.Fprintf(out, "confirmNewRecipients: %t\n", a.Config.ConfirmNewRecipients)
 		return nil
 	},
 }

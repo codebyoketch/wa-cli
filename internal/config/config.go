@@ -16,12 +16,21 @@ import (
 
 // Config holds all user-configurable settings for wa-cli.
 type Config struct {
-	// LogLevel is one of "debug", "info", "warn", "error".
-	LogLevel string `json:"logLevel"`
-	// JSONOutput makes all commands default to `--json` formatting.
-	JSONOutput bool `json:"jsonOutput"`
-	// DataDir is where the SQLite session/device store lives.
-	DataDir string `json:"dataDir"`
+	LogLevel   string `json:"logLevel"`
+	JSONOutput bool   `json:"jsonOutput"`
+	DataDir    string `json:"dataDir"`
+
+	// MaxMessagesPerMinute/Hour/Day cap outbound sends to keep wa-cli
+	// behaving like a normal personal client. 0 means "no limit" for that
+	// window — not recommended, but available for advanced users who
+	// understand the ban-risk tradeoff.
+	MaxMessagesPerMinute int `json:"maxMessagesPerMinute"`
+	MaxMessagesPerHour   int `json:"maxMessagesPerHour"`
+	MaxMessagesPerDay    int `json:"maxMessagesPerDay"`
+
+	// ConfirmNewRecipients requires explicit confirmation before the first
+	// send to a recipient wa-cli hasn't messaged before.
+	ConfirmNewRecipients bool `json:"confirmNewRecipients"`
 }
 
 // Default returns sane defaults for a fresh install.
@@ -31,9 +40,13 @@ func Default() Config {
 		dir = "."
 	}
 	return Config{
-		LogLevel:   "info",
-		JSONOutput: false,
-		DataDir:    filepath.Join(dir, "data"),
+		LogLevel:             "info",
+		JSONOutput:           false,
+		DataDir:              filepath.Join(dir, "data"),
+		MaxMessagesPerMinute: 10,
+		MaxMessagesPerHour:   100,
+		MaxMessagesPerDay:    500,
+		ConfirmNewRecipients: true,
 	}
 }
 
