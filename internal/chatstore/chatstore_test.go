@@ -96,6 +96,51 @@ func TestSearch_MatchesJID(t *testing.T) {
 	}
 }
 
+func TestIncrementUnread(t *testing.T) {
+	s := New(t.TempDir())
+	jid := "a@s.whatsapp.net"
+
+	for i := 0; i < 3; i++ {
+		if err := s.IncrementUnread(jid); err != nil {
+			t.Fatalf("IncrementUnread: %v", err)
+		}
+	}
+
+	got, _, err := s.Get(jid)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.UnreadCount != 3 {
+		t.Fatalf("expected UnreadCount 3, got %d", got.UnreadCount)
+	}
+}
+
+func TestUpsert_PreservesUnreadCount(t *testing.T) {
+	s := New(t.TempDir())
+	jid := "a@s.whatsapp.net"
+
+	if err := s.IncrementUnread(jid); err != nil {
+		t.Fatalf("IncrementUnread: %v", err)
+	}
+	if err := s.IncrementUnread(jid); err != nil {
+		t.Fatalf("IncrementUnread: %v", err)
+	}
+
+	// Simulate ingestMessage's metadata Upsert, which shouldn't stomp the
+	// unread count that IncrementUnread just set.
+	if err := s.Upsert(Chat{JID: jid, Name: "Alice", LastMessageAt: 100, LastMessagePreview: "hi"}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	got, _, err := s.Get(jid)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.UnreadCount != 2 {
+		t.Fatalf("expected UnreadCount preserved at 2, got %d", got.UnreadCount)
+	}
+}
+
 func TestMarkRead(t *testing.T) {
 	s := New(t.TempDir())
 	jid := "a@s.whatsapp.net"

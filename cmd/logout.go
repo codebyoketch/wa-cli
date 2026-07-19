@@ -23,7 +23,7 @@ var logoutCmd = &cobra.Command{
 			return err
 		}
 
-		client, err := whatsapp.New(ctx, container, dbLog, nil)
+		client, err := whatsapp.New(ctx, container, dbLog, nil, nil)
 		if err != nil {
 			return err
 		}

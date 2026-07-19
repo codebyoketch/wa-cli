@@ -8,6 +8,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"github.com/codebyoketch/wa-cli/internal/chatstore"
+	"github.com/codebyoketch/wa-cli/internal/msgstore"
 	"github.com/codebyoketch/wa-cli/internal/store"
 	"github.com/codebyoketch/wa-cli/internal/whatsapp"
 )
@@ -25,7 +26,7 @@ var loginCmd = &cobra.Command{
 			return err
 		}
 
-		client, err := whatsapp.New(ctx, container, dbLog, chatstore.New(a.Config.DataDir))
+		client, err := whatsapp.New(ctx, container, dbLog, chatstore.New(a.Config.DataDir), msgstore.New(a.Config.DataDir))
 		if err != nil {
 			return err
 		}

@@ -9,6 +9,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"github.com/codebyoketch/wa-cli/internal/chatstore"
+	"github.com/codebyoketch/wa-cli/internal/msgstore"
 	"github.com/codebyoketch/wa-cli/internal/store"
 	"github.com/codebyoketch/wa-cli/internal/whatsapp"
 )
@@ -88,7 +89,7 @@ var chatInfoCmd = &cobra.Command{
 
 var chatOpenCmd = &cobra.Command{
 	Use:   "open <jid-or-name>",
-	Short: "Open a chat (shows info; message history lands in a later phase)",
+	Short: "Open a chat and show recent message history",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		chat, err := resolveChat(args[0])
@@ -99,11 +100,26 @@ var chatOpenCmd = &cobra.Command{
 		if err := cs.MarkRead(chat.JID); err != nil {
 			a.Log.Warn("failed to mark chat read", "error", err)
 		}
-		fmt.Printf("%s (%s)\n", chat.Name, chat.JID)
-		if chat.LastMessagePreview != "" {
-			fmt.Printf("Last: %s\n", chat.LastMessagePreview)
+		fmt.Printf("%s (%s)\n\n", chat.Name, chat.JID)
+
+		ms := msgstore.New(a.Config.DataDir)
+		msgs, err := ms.List(chat.JID)
+		if err != nil {
+			return err
 		}
-		fmt.Println("\n(Message history and live reply come in Phase 4/5 — this just opens/marks-read for now.)")
+		if len(msgs) == 0 {
+			fmt.Println("No local message history yet. Run 'wa watch' for a while, or send/receive a message, to build it up.")
+			return nil
+		}
+		for i, m := range msgs {
+			who := "them"
+			if m.FromMe {
+				who = "you"
+			}
+			ts := time.UnixMilli(m.Timestamp).Local().Format("15:04:05")
+			fmt.Printf("[%d] (%s) %s: %s\n", i+1, ts, who, m.Text)
+		}
+		fmt.Println("\nUse the [n] number with 'wa chat reply' or 'wa chat forward' to reference a message.")
 		return nil
 	},
 }
@@ -127,7 +143,7 @@ func syncAndLoadChats(cmd *cobra.Command) ([]chatstore.Chat, error) {
 	}
 
 	cs := chatstore.New(a.Config.DataDir)
-	client, err := whatsapp.New(ctx, container, dbLog, cs)
+	client, err := whatsapp.New(ctx, container, dbLog, cs, msgstore.New(a.Config.DataDir))
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 
 	"github.com/codebyoketch/wa-cli/internal/chatstore"
+	"github.com/codebyoketch/wa-cli/internal/msgstore"
 	"github.com/codebyoketch/wa-cli/internal/safety"
 	"github.com/codebyoketch/wa-cli/internal/store"
 	"github.com/codebyoketch/wa-cli/internal/whatsapp"
@@ -40,7 +41,7 @@ rather than racing a short sync window each time.`,
 		cs := chatstore.New(a.Config.DataDir)
 		guard := safety.New(a.Config.DataDir)
 
-		client, err := whatsapp.New(ctx, container, dbLog, cs)
+		client, err := whatsapp.New(ctx, container, dbLog, cs, msgstore.New(a.Config.DataDir))
 		if err != nil {
 			return err
 		}

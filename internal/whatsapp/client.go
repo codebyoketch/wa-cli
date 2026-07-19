@@ -2,17 +2,22 @@ package whatsapp
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
 
 	"go.mau.fi/whatsmeow"
+	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/codebyoketch/wa-cli/internal/chatstore"
 	waerrors "github.com/codebyoketch/wa-cli/internal/errors"
+	"github.com/codebyoketch/wa-cli/internal/msgstore"
 	"github.com/codebyoketch/wa-cli/internal/qr"
 	"github.com/codebyoketch/wa-cli/internal/safety"
 )
@@ -21,21 +26,22 @@ type Client struct {
 	WA    *whatsmeow.Client
 	log   waLog.Logger
 	chats *chatstore.Store
+	msgs  *msgstore.Store
 }
 
 // New builds a Client using the first (or a fresh, unpaired) device from
-// container. chats may be nil if the caller doesn't need chat syncing
-// (e.g. login/logout/status don't).
-func New(ctx context.Context, container *sqlstore.Container, log waLog.Logger, chats *chatstore.Store) (*Client, error) {
+// container. chats/msgs may be nil for commands that don't need chat or
+// message history (e.g. login/logout/status).
+func New(ctx context.Context, container *sqlstore.Container, log waLog.Logger, chats *chatstore.Store, msgs *msgstore.Store) (*Client, error) {
 	device, err := container.GetFirstDevice(ctx)
 	if err != nil {
 		return nil, waerrors.Wrap(err, "loading device store")
 	}
 	clientLog := waLog.Stdout("Client", "WARN", true)
 	waClient := whatsmeow.NewClient(device, clientLog)
-	c := &Client{WA: waClient, log: log, chats: chats}
+	c := &Client{WA: waClient, log: log, chats: chats, msgs: msgs}
 
-	if chats != nil {
+	if chats != nil || msgs != nil {
 		waClient.AddEventHandler(c.handleEvent)
 	}
 
@@ -45,7 +51,9 @@ func New(ctx context.Context, container *sqlstore.Container, log waLog.Logger, c
 func (c *Client) handleEvent(evt interface{}) {
 	switch v := evt.(type) {
 	case *events.HistorySync:
-		c.ingestHistorySync(v)
+		if c.chats != nil {
+			c.ingestHistorySync(v)
+		}
 	case *events.Message:
 		c.ingestMessage(v)
 	}
@@ -104,10 +112,10 @@ func (c *Client) ingestHistorySync(evt *events.HistorySync) {
 // chats.
 const statusBroadcastJID = "status@broadcast"
 
-// ingestMessage keeps chatstore current as new messages arrive/are sent
-// after the initial sync (this is what wa watch leans on most heavily;
-// wired in here too so a chat you're mid-conversation with during
-// `wa chat list` still looks current).
+// ingestMessage keeps chatstore and msgstore current as new messages
+// arrive/are sent after the initial sync (this is what wa watch leans on
+// most heavily; wired in here too so a chat you're mid-conversation with
+// during `wa chat list`/`wa chat open` still looks current).
 func (c *Client) ingestMessage(evt *events.Message) {
 	jid := evt.Info.Chat.String()
 	if jid == statusBroadcastJID {
@@ -116,21 +124,48 @@ func (c *Client) ingestMessage(evt *events.Message) {
 
 	preview := extractPreview(evt.Message)
 
-	err := c.chats.Upsert(chatstore.Chat{
-		JID:                jid,
-		IsGroup:            evt.Info.IsGroup,
-		LastMessageAt:      evt.Info.Timestamp.UnixMilli(),
-		LastMessagePreview: preview,
-	})
-	if err != nil {
-		c.log.Warnf("chatstore upsert failed for %s: %v", jid, err)
+	if c.chats != nil {
+		err := c.chats.Upsert(chatstore.Chat{
+			JID:                jid,
+			IsGroup:            evt.Info.IsGroup,
+			LastMessageAt:      evt.Info.Timestamp.UnixMilli(),
+			LastMessagePreview: preview,
+		})
+		if err != nil {
+			c.log.Warnf("chatstore upsert failed for %s: %v", jid, err)
+		}
+
+		if !evt.Info.IsFromMe {
+			if err := c.chats.IncrementUnread(jid); err != nil {
+				c.log.Warnf("chatstore unread increment failed for %s: %v", jid, err)
+			}
+		}
 	}
 
-	// Only count messages from others as unread, not our own outgoing
-	// messages (which also come through as *events.Message).
-	if !evt.Info.IsFromMe {
-		if err := c.chats.IncrementUnread(jid); err != nil {
-			c.log.Warnf("chatstore unread increment failed for %s: %v", jid, err)
+	if c.msgs != nil {
+		sender := evt.Info.Sender.String()
+		if evt.Info.IsFromMe {
+			sender = "me"
+		}
+
+		var raw string
+		if evt.Message != nil {
+			if b, err := proto.Marshal(evt.Message); err == nil {
+				raw = base64.StdEncoding.EncodeToString(b)
+			}
+		}
+
+		err := c.msgs.Append(msgstore.Message{
+			ID:        evt.Info.ID,
+			ChatJID:   jid,
+			SenderJID: sender,
+			Timestamp: evt.Info.Timestamp.UnixMilli(),
+			Text:      preview,
+			FromMe:    evt.Info.IsFromMe,
+			RawProto:  raw,
+		})
+		if err != nil {
+			c.log.Warnf("msgstore append failed for %s: %v", jid, err)
 		}
 	}
 }
@@ -365,4 +400,103 @@ func (c *Client) Logout(ctx context.Context) error {
 
 func (c *Client) Disconnect() {
 	c.WA.Disconnect()
+}
+
+// SendText sends a plain text message to jid and returns the sent
+// message's ID (for later reply/forward reference). Callers should call
+// Connect() first.
+func (c *Client) SendText(ctx context.Context, jid types.JID, text string) (string, error) {
+	msg := &waProto.Message{
+		Conversation: proto.String(text),
+	}
+	resp, err := c.WA.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", waerrors.Wrap(err, "sending message")
+	}
+	return resp.ID, nil
+}
+
+// SendReply sends text to jid as a quoted reply to quoted. If quoted's
+// original content couldn't be reconstructed (e.g. an old or unsupported
+// message type), the reply is still sent, just without the visible quote.
+func (c *Client) SendReply(ctx context.Context, jid types.JID, text string, quoted msgstore.Message) (string, error) {
+	ctxInfo := &waProto.ContextInfo{
+		StanzaID:    proto.String(quoted.ID),
+		Participant: proto.String(quoted.SenderJID),
+	}
+	if quotedMsg := decodeRawProto(quoted.RawProto); quotedMsg != nil {
+		ctxInfo.QuotedMessage = quotedMsg
+	}
+
+	msg := &waProto.Message{
+		ExtendedTextMessage: &waProto.ExtendedTextMessage{
+			Text:        proto.String(text),
+			ContextInfo: ctxInfo,
+		},
+	}
+	resp, err := c.WA.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", waerrors.Wrap(err, "sending reply")
+	}
+	return resp.ID, nil
+}
+
+// ForwardMessage re-sends quoted's content to toJID, marked as forwarded.
+// Only plain text and extended-text (e.g. text with a link preview)
+// messages are supported in this pass — media forwarding would need
+// re-uploading the media, which is out of scope here.
+func (c *Client) ForwardMessage(ctx context.Context, toJID types.JID, quoted msgstore.Message) (string, error) {
+	original := decodeRawProto(quoted.RawProto)
+	if original == nil {
+		return "", waerrors.New("original message content isn't available to forward (too old, or an unsupported message type)")
+	}
+
+	var msg *waProto.Message
+	switch {
+	case original.GetConversation() != "":
+		msg = &waProto.Message{
+			ExtendedTextMessage: &waProto.ExtendedTextMessage{
+				Text: proto.String(original.GetConversation()),
+				ContextInfo: &waProto.ContextInfo{
+					IsForwarded:     proto.Bool(true),
+					ForwardingScore: proto.Uint32(1),
+				},
+			},
+		}
+	case original.GetExtendedTextMessage() != nil:
+		msg = original
+		ext := msg.GetExtendedTextMessage()
+		if ext.ContextInfo == nil {
+			ext.ContextInfo = &waProto.ContextInfo{}
+		}
+		ext.ContextInfo.IsForwarded = proto.Bool(true)
+		ext.ContextInfo.ForwardingScore = proto.Uint32(ext.ContextInfo.GetForwardingScore() + 1)
+	default:
+		return "", waerrors.New("forwarding this message type isn't supported yet (text only)")
+	}
+
+	resp, err := c.WA.SendMessage(ctx, toJID, msg)
+	if err != nil {
+		return "", waerrors.Wrap(err, "forwarding message")
+	}
+	return resp.ID, nil
+}
+
+// decodeRawProto reconstructs a stored message's original content from
+// its base64-encoded protobuf, returning nil if unavailable or decoding
+// fails (callers should degrade gracefully rather than error out — a
+// reply/forward without the original quote attached is still useful).
+func decodeRawProto(raw string) *waProto.Message {
+	if raw == "" {
+		return nil
+	}
+	data, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return nil
+	}
+	msg := &waProto.Message{}
+	if err := proto.Unmarshal(data, msg); err != nil {
+		return nil
+	}
+	return msg
 }
