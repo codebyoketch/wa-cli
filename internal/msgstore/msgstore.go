@@ -25,12 +25,15 @@ type Message struct {
 	ChatJID   string `json:"chatJid"`
 	SenderJID string `json:"senderJid"`
 	Timestamp int64  `json:"timestamp"` // unix millis
-	Text      string `json:"text"`
+	Text      string `json:"text"`      // caption, for media messages
 	FromMe    bool   `json:"fromMe"`
+	// MediaType is "" for plain text, or one of "image", "video",
+	// "audio", "document", "sticker".
+	MediaType string `json:"mediaType,omitempty"`
 	// RawProto is the base64-encoded serialized WhatsApp message content,
 	// used to reconstruct quote/forward context when replying or
-	// forwarding. Empty if unavailable (unsupported message type, or
-	// encoding failed) — reply/forward of such messages isn't possible.
+	// forwarding, and to redownload media. Empty if unavailable
+	// (unsupported message type, or encoding failed).
 	RawProto string `json:"rawProto,omitempty"`
 }
 

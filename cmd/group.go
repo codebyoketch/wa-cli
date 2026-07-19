@@ -23,7 +23,7 @@ var groupListCmd = &cobra.Command{
 	Short: "List groups you're a member of",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		client, err := connectForGroups(ctx)
+		client, err := connectClient(ctx)
 		if err != nil {
 			return err
 		}
@@ -50,7 +50,7 @@ var groupInfoCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		client, err := connectForGroups(ctx)
+		client, err := connectClient(ctx)
 		if err != nil {
 			return err
 		}
@@ -106,7 +106,7 @@ besides yourself.`,
 			return fmt.Errorf("cancelled")
 		}
 
-		client, err := connectForGroups(ctx)
+		client, err := connectClient(ctx)
 		if err != nil {
 			return err
 		}
@@ -144,7 +144,7 @@ func init() {
 	rootCmd.AddCommand(groupCmd)
 }
 
-func connectForGroups(ctx context.Context) (*whatsapp.Client, error) {
+func connectClient(ctx context.Context) (*whatsapp.Client, error) {
 	dbLog := waLog.Stdout("Database", "WARN", true)
 	container, err := store.Open(ctx, a.Config.DataDir, dbLog)
 	if err != nil {
@@ -212,7 +212,7 @@ func confirm(prompt string) bool {
 
 func groupParticipantChange(groupTarget string, participantTargets []string, add bool) error {
 	ctx := context.Background()
-	client, err := connectForGroups(ctx)
+	client, err := connectClient(ctx)
 	if err != nil {
 		return err
 	}

@@ -32,11 +32,10 @@ detailed history.
       indicators not yet implemented.
 - [x] **Phase 6 — Contacts**: `wa contact list/search/info` — reads the
       local device store directly, no network connection needed.
-- [ ] **Phase 7 — Groups**: `wa group list/info/create/add/remove` built,
-      not yet verified against a real account. Largest surface of
-      whatsmeow API guesses yet (GetJoinedGroups, GetGroupInfo,
-      CreateGroup/ReqCreateGroup, UpdateGroupParticipants,
-      types.GroupInfo's field shape) — expect go doc-driven fixes.
+- [x] **Phase 7 — Groups**: `wa group list/info/create/add/remove`.
+      Verified against a real account — create confirmed working with a
+      genuine third-party participant (a self-only participant list
+      correctly gets rejected by WhatsApp's server, not a bug).
 - [ ] **Phase 8 — Media**: send/download/list images, video, audio,
       documents, stickers.
 - [ ] **Phase 9 — Terminal UI**: Bubble Tea / Lip Gloss / Bubbles full-screen

@@ -133,7 +133,14 @@ func (c *Client) ingestMessage(evt *events.Message) {
 		return
 	}
 
-	preview := extractPreview(evt.Message)
+	mediaType, text := classifyMessage(evt.Message)
+	preview := text
+	switch {
+	case mediaType != "" && text != "":
+		preview = fmt.Sprintf("[%s] %s", mediaType, text)
+	case mediaType != "":
+		preview = fmt.Sprintf("[%s]", mediaType)
+	}
 
 	if c.chats != nil {
 		err := c.chats.Upsert(chatstore.Chat{
@@ -172,8 +179,9 @@ func (c *Client) ingestMessage(evt *events.Message) {
 			ChatJID:   jid,
 			SenderJID: sender,
 			Timestamp: evt.Info.Timestamp.UnixMilli(),
-			Text:      preview,
+			Text:      text,
 			FromMe:    evt.Info.IsFromMe,
+			MediaType: mediaType,
 			RawProto:  raw,
 		})
 		if err != nil {
@@ -182,6 +190,10 @@ func (c *Client) ingestMessage(evt *events.Message) {
 	}
 }
 
+// extractPreview trims plain conversational text for display. Kept for
+// HistorySync ingestion, which only has a bare GetConversation()-shaped
+// value at the point it's called (see classifyMessage for the fuller,
+// type-aware version used everywhere else).
 func extractPreview(msg interface{ GetConversation() string }) string {
 	if msg == nil {
 		return ""
@@ -191,6 +203,36 @@ func extractPreview(msg interface{ GetConversation() string }) string {
 		text = text[:80] + "…"
 	}
 	return text
+}
+
+// classifyMessage identifies a message's type (empty string for plain
+// text) and extracts its text content — the conversation/extended-text
+// body for text messages, or the caption (if any) for media messages.
+func classifyMessage(msg *waProto.Message) (mediaType, text string) {
+	if msg == nil {
+		return "", ""
+	}
+	switch {
+	case msg.GetConversation() != "":
+		return "", msg.GetConversation()
+	case msg.GetExtendedTextMessage() != nil:
+		return "", msg.GetExtendedTextMessage().GetText()
+	case msg.GetImageMessage() != nil:
+		return "image", msg.GetImageMessage().GetCaption()
+	case msg.GetVideoMessage() != nil:
+		return "video", msg.GetVideoMessage().GetCaption()
+	case msg.GetAudioMessage() != nil:
+		if msg.GetAudioMessage().GetPTT() {
+			return "voice note", ""
+		}
+		return "audio", ""
+	case msg.GetDocumentMessage() != nil:
+		return "document", msg.GetDocumentMessage().GetCaption()
+	case msg.GetStickerMessage() != nil:
+		return "sticker", ""
+	default:
+		return "", ""
+	}
 }
 
 // SyncChats connects, waits up to timeout for chat data to arrive via
@@ -541,9 +583,14 @@ func (c *Client) printIncoming(evt *events.Message, guard *safety.Guard) {
 		sender = evt.Info.Sender.User
 	}
 
-	text := extractPreview(evt.Message)
-	if text == "" {
-		text = "[non-text message]"
+	mediaType, text := classifyMessage(evt.Message)
+	switch {
+	case mediaType != "" && text != "":
+		text = fmt.Sprintf("[%s] %s", mediaType, text)
+	case mediaType != "":
+		text = fmt.Sprintf("[%s]", mediaType)
+	case text == "":
+		text = "[unsupported message type]"
 	}
 
 	ts := evt.Info.Timestamp.Local().Format("15:04:05")
@@ -622,42 +669,190 @@ func (c *Client) SendReply(ctx context.Context, jid types.JID, text string, quot
 	return resp.ID, nil
 }
 
+// SendImage uploads data and sends it as an image message with an
+// optional caption.
+func (c *Client) SendImage(ctx context.Context, jid types.JID, data []byte, mimetype, caption string) (string, error) {
+	upload, err := c.WA.Upload(ctx, data, whatsmeow.MediaImage)
+	if err != nil {
+		return "", waerrors.Wrap(err, "uploading image")
+	}
+	msg := &waProto.Message{
+		ImageMessage: &waProto.ImageMessage{
+			URL:           proto.String(upload.URL),
+			DirectPath:    proto.String(upload.DirectPath),
+			MediaKey:      upload.MediaKey,
+			Mimetype:      proto.String(mimetype),
+			FileEncSHA256: upload.FileEncSHA256,
+			FileSHA256:    upload.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+		},
+	}
+	if caption != "" {
+		msg.ImageMessage.Caption = proto.String(caption)
+	}
+	return c.sendMedia(ctx, jid, msg, "image")
+}
+
+// SendVideo uploads data and sends it as a video message with an
+// optional caption.
+func (c *Client) SendVideo(ctx context.Context, jid types.JID, data []byte, mimetype, caption string) (string, error) {
+	upload, err := c.WA.Upload(ctx, data, whatsmeow.MediaVideo)
+	if err != nil {
+		return "", waerrors.Wrap(err, "uploading video")
+	}
+	msg := &waProto.Message{
+		VideoMessage: &waProto.VideoMessage{
+			URL:           proto.String(upload.URL),
+			DirectPath:    proto.String(upload.DirectPath),
+			MediaKey:      upload.MediaKey,
+			Mimetype:      proto.String(mimetype),
+			FileEncSHA256: upload.FileEncSHA256,
+			FileSHA256:    upload.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+		},
+	}
+	if caption != "" {
+		msg.VideoMessage.Caption = proto.String(caption)
+	}
+	return c.sendMedia(ctx, jid, msg, "video")
+}
+
+// SendAudio uploads data and sends it as an audio message. Set voice=true
+// to send as a voice note (PTT) rather than a regular audio file.
+func (c *Client) SendAudio(ctx context.Context, jid types.JID, data []byte, mimetype string, voice bool) (string, error) {
+	upload, err := c.WA.Upload(ctx, data, whatsmeow.MediaAudio)
+	if err != nil {
+		return "", waerrors.Wrap(err, "uploading audio")
+	}
+	msg := &waProto.Message{
+		AudioMessage: &waProto.AudioMessage{
+			URL:           proto.String(upload.URL),
+			DirectPath:    proto.String(upload.DirectPath),
+			MediaKey:      upload.MediaKey,
+			Mimetype:      proto.String(mimetype),
+			FileEncSHA256: upload.FileEncSHA256,
+			FileSHA256:    upload.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+			PTT:           proto.Bool(voice),
+		},
+	}
+	return c.sendMedia(ctx, jid, msg, "audio")
+}
+
+// SendDocument uploads data and sends it as a document message.
+func (c *Client) SendDocument(ctx context.Context, jid types.JID, data []byte, mimetype, filename, caption string) (string, error) {
+	upload, err := c.WA.Upload(ctx, data, whatsmeow.MediaDocument)
+	if err != nil {
+		return "", waerrors.Wrap(err, "uploading document")
+	}
+	msg := &waProto.Message{
+		DocumentMessage: &waProto.DocumentMessage{
+			URL:           proto.String(upload.URL),
+			DirectPath:    proto.String(upload.DirectPath),
+			MediaKey:      upload.MediaKey,
+			Mimetype:      proto.String(mimetype),
+			FileEncSHA256: upload.FileEncSHA256,
+			FileSHA256:    upload.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+			FileName:      proto.String(filename),
+		},
+	}
+	if caption != "" {
+		msg.DocumentMessage.Caption = proto.String(caption)
+	}
+	return c.sendMedia(ctx, jid, msg, "document")
+}
+
+// SendSticker uploads data and sends it as a sticker message. data
+// should already be in WebP format — WhatsApp doesn't accept other
+// formats for stickers, and this doesn't convert for you.
+func (c *Client) SendSticker(ctx context.Context, jid types.JID, data []byte, mimetype string) (string, error) {
+	upload, err := c.WA.Upload(ctx, data, whatsmeow.MediaImage)
+	if err != nil {
+		return "", waerrors.Wrap(err, "uploading sticker")
+	}
+	msg := &waProto.Message{
+		StickerMessage: &waProto.StickerMessage{
+			URL:           proto.String(upload.URL),
+			DirectPath:    proto.String(upload.DirectPath),
+			MediaKey:      upload.MediaKey,
+			Mimetype:      proto.String(mimetype),
+			FileEncSHA256: upload.FileEncSHA256,
+			FileSHA256:    upload.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+		},
+	}
+	return c.sendMedia(ctx, jid, msg, "sticker")
+}
+
+func (c *Client) sendMedia(ctx context.Context, jid types.JID, msg *waProto.Message, kind string) (string, error) {
+	var resp whatsmeow.SendResponse
+	err := withRetry(func() error {
+		var sendErr error
+		resp, sendErr = c.WA.SendMessage(ctx, jid, msg)
+		return sendErr
+	})
+	if err != nil {
+		return "", waerrors.Wrap(err, "sending "+kind)
+	}
+	return resp.ID, nil
+}
+
+// DownloadMedia reconstructs a stored message's media content from its
+// RawProto and downloads it via WhatsApp's encrypted media CDN. Returns
+// the raw bytes and the mimetype recorded with the message.
+func (c *Client) DownloadMedia(ctx context.Context, quoted msgstore.Message) ([]byte, string, error) {
+	original := decodeRawProto(quoted.RawProto)
+	if original == nil {
+		return nil, "", waerrors.New("original message content isn't available (too old, or not captured)")
+	}
+
+	var downloadable whatsmeow.DownloadableMessage
+	var mimetype string
+	switch {
+	case original.GetImageMessage() != nil:
+		downloadable = original.GetImageMessage()
+		mimetype = original.GetImageMessage().GetMimetype()
+	case original.GetVideoMessage() != nil:
+		downloadable = original.GetVideoMessage()
+		mimetype = original.GetVideoMessage().GetMimetype()
+	case original.GetAudioMessage() != nil:
+		downloadable = original.GetAudioMessage()
+		mimetype = original.GetAudioMessage().GetMimetype()
+	case original.GetDocumentMessage() != nil:
+		downloadable = original.GetDocumentMessage()
+		mimetype = original.GetDocumentMessage().GetMimetype()
+	case original.GetStickerMessage() != nil:
+		downloadable = original.GetStickerMessage()
+		mimetype = original.GetStickerMessage().GetMimetype()
+	default:
+		return nil, "", waerrors.New("this message doesn't contain downloadable media")
+	}
+
+	data, err := c.WA.Download(ctx, downloadable)
+	if err != nil {
+		return nil, "", waerrors.Wrap(err, "downloading media")
+	}
+	return data, mimetype, nil
+}
+
 // ForwardMessage re-sends quoted's content to toJID, marked as forwarded.
-// Only plain text and extended-text (e.g. text with a link preview)
-// messages are supported in this pass — media forwarding would need
-// re-uploading the media, which is out of scope here.
+// For media messages, this reuses the original upload (URL/MediaKey/
+// hashes) rather than re-uploading — WhatsApp allows resending the same
+// uploaded media reference with IsForwarded set.
 func (c *Client) ForwardMessage(ctx context.Context, toJID types.JID, quoted msgstore.Message) (string, error) {
 	original := decodeRawProto(quoted.RawProto)
 	if original == nil {
-		return "", waerrors.New("original message content isn't available to forward (too old, or an unsupported message type)")
+		return "", waerrors.New("original message content isn't available to forward (too old, or not captured)")
 	}
 
-	var msg *waProto.Message
-	switch {
-	case original.GetConversation() != "":
-		msg = &waProto.Message{
-			ExtendedTextMessage: &waProto.ExtendedTextMessage{
-				Text: proto.String(original.GetConversation()),
-				ContextInfo: &waProto.ContextInfo{
-					IsForwarded:     proto.Bool(true),
-					ForwardingScore: proto.Uint32(1),
-				},
-			},
-		}
-	case original.GetExtendedTextMessage() != nil:
-		msg = original
-		ext := msg.GetExtendedTextMessage()
-		if ext.ContextInfo == nil {
-			ext.ContextInfo = &waProto.ContextInfo{}
-		}
-		ext.ContextInfo.IsForwarded = proto.Bool(true)
-		ext.ContextInfo.ForwardingScore = proto.Uint32(ext.ContextInfo.GetForwardingScore() + 1)
-	default:
-		return "", waerrors.New("forwarding this message type isn't supported yet (text only)")
+	msg, err := markForwarded(original)
+	if err != nil {
+		return "", err
 	}
 
 	var resp whatsmeow.SendResponse
-	err := withRetry(func() error {
+	err = withRetry(func() error {
 		var sendErr error
 		resp, sendErr = c.WA.SendMessage(ctx, toJID, msg)
 		return sendErr
@@ -666,6 +861,58 @@ func (c *Client) ForwardMessage(ctx context.Context, toJID types.JID, quoted msg
 		return "", waerrors.Wrap(err, "forwarding message")
 	}
 	return resp.ID, nil
+}
+
+// markForwarded returns a message equivalent to original but with
+// IsForwarded/ForwardingScore set on its ContextInfo. Plain Conversation
+// text is normalized into ExtendedTextMessage first, since Conversation
+// (a bare string field) has nowhere to attach ContextInfo. Supports text
+// and all 5 media types; anything else is rejected.
+func markForwarded(original *waProto.Message) (*waProto.Message, error) {
+	bump := func(ci *waProto.ContextInfo) *waProto.ContextInfo {
+		if ci == nil {
+			ci = &waProto.ContextInfo{}
+		}
+		ci.IsForwarded = proto.Bool(true)
+		ci.ForwardingScore = proto.Uint32(ci.GetForwardingScore() + 1)
+		return ci
+	}
+
+	switch {
+	case original.GetConversation() != "":
+		return &waProto.Message{
+			ExtendedTextMessage: &waProto.ExtendedTextMessage{
+				Text:        proto.String(original.GetConversation()),
+				ContextInfo: bump(nil),
+			},
+		}, nil
+	case original.GetExtendedTextMessage() != nil:
+		m := original.GetExtendedTextMessage()
+		m.ContextInfo = bump(m.ContextInfo)
+		return &waProto.Message{ExtendedTextMessage: m}, nil
+	case original.GetImageMessage() != nil:
+		m := original.GetImageMessage()
+		m.ContextInfo = bump(m.ContextInfo)
+		return &waProto.Message{ImageMessage: m}, nil
+	case original.GetVideoMessage() != nil:
+		m := original.GetVideoMessage()
+		m.ContextInfo = bump(m.ContextInfo)
+		return &waProto.Message{VideoMessage: m}, nil
+	case original.GetAudioMessage() != nil:
+		m := original.GetAudioMessage()
+		m.ContextInfo = bump(m.ContextInfo)
+		return &waProto.Message{AudioMessage: m}, nil
+	case original.GetDocumentMessage() != nil:
+		m := original.GetDocumentMessage()
+		m.ContextInfo = bump(m.ContextInfo)
+		return &waProto.Message{DocumentMessage: m}, nil
+	case original.GetStickerMessage() != nil:
+		m := original.GetStickerMessage()
+		m.ContextInfo = bump(m.ContextInfo)
+		return &waProto.Message{StickerMessage: m}, nil
+	default:
+		return nil, waerrors.New("forwarding this message type isn't supported yet")
+	}
 }
 
 // decodeRawProto reconstructs a stored message's original content from
