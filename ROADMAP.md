@@ -30,8 +30,13 @@ detailed history.
       connection-reliability testing showed a persistent, reconnecting
       connection was needed regardless — read receipts / typing
       indicators not yet implemented.
-- [ ] **Phase 6 — Contacts**: list, info, search.
-- [ ] **Phase 7 — Groups**: list, create, add, remove, info.
+- [x] **Phase 6 — Contacts**: `wa contact list/search/info` — reads the
+      local device store directly, no network connection needed.
+- [ ] **Phase 7 — Groups**: `wa group list/info/create/add/remove` built,
+      not yet verified against a real account. Largest surface of
+      whatsmeow API guesses yet (GetJoinedGroups, GetGroupInfo,
+      CreateGroup/ReqCreateGroup, UpdateGroupParticipants,
+      types.GroupInfo's field shape) — expect go doc-driven fixes.
 - [ ] **Phase 8 — Media**: send/download/list images, video, audio,
       documents, stickers.
 - [ ] **Phase 9 — Terminal UI**: Bubble Tea / Lip Gloss / Bubbles full-screen

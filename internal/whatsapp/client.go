@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -219,6 +220,149 @@ func (c *Client) SyncChats(ctx context.Context, timeout time.Duration) error {
 
 func (c *Client) IsLoggedIn() bool {
 	return c.WA.Store.ID != nil
+}
+
+// Contact is a simplified view of a WhatsApp contact.
+type Contact struct {
+	JID          string
+	Name         string // best available: FullName > FirstName > PushName > BusinessName
+	PushName     string
+	BusinessName string
+}
+
+// ListContacts returns all locally known contacts, sorted by name. This
+// reads directly from the local device store — no network connection
+// needed, since WhatsApp syncs your contact list to the device during
+// login and keeps it updated from there.
+func (c *Client) ListContacts(ctx context.Context) ([]Contact, error) {
+	contacts, err := c.WA.Store.Contacts.GetAllContacts(ctx)
+	if err != nil {
+		return nil, waerrors.Wrap(err, "loading contacts")
+	}
+
+	out := make([]Contact, 0, len(contacts))
+	for jid, info := range contacts {
+		out = append(out, Contact{
+			JID:          jid.String(),
+			Name:         bestContactName(info),
+			PushName:     info.PushName,
+			BusinessName: info.BusinessName,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	return out, nil
+}
+
+func bestContactName(info types.ContactInfo) string {
+	switch {
+	case info.FullName != "":
+		return info.FullName
+	case info.FirstName != "":
+		return info.FirstName
+	case info.PushName != "":
+		return info.PushName
+	case info.BusinessName != "":
+		return info.BusinessName
+	default:
+		return ""
+	}
+}
+
+// Group is a simplified view of a WhatsApp group.
+type Group struct {
+	JID              string
+	Name             string
+	Topic            string
+	ParticipantCount int
+}
+
+// Participant is one member of a group.
+type Participant struct {
+	JID          string
+	IsAdmin      bool
+	IsSuperAdmin bool
+}
+
+// ListGroups returns all groups the account is currently a member of.
+func (c *Client) ListGroups(ctx context.Context) ([]Group, error) {
+	groups, err := c.WA.GetJoinedGroups(ctx)
+	if err != nil {
+		return nil, waerrors.Wrap(err, "loading groups")
+	}
+
+	out := make([]Group, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, Group{
+			JID:              g.JID.String(),
+			Name:             g.GroupName.Name,
+			Topic:            g.Topic,
+			ParticipantCount: len(g.Participants),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
+	return out, nil
+}
+
+// GroupInfo returns details and the participant list for one group.
+func (c *Client) GroupInfo(ctx context.Context, jid types.JID) (Group, []Participant, error) {
+	info, err := c.WA.GetGroupInfo(ctx, jid)
+	if err != nil {
+		return Group{}, nil, waerrors.Wrap(err, "loading group info")
+	}
+
+	group := Group{
+		JID:              info.JID.String(),
+		Name:             info.GroupName.Name,
+		Topic:            info.Topic,
+		ParticipantCount: len(info.Participants),
+	}
+
+	participants := make([]Participant, 0, len(info.Participants))
+	for _, p := range info.Participants {
+		participants = append(participants, Participant{
+			JID:          p.JID.String(),
+			IsAdmin:      p.IsAdmin,
+			IsSuperAdmin: p.IsSuperAdmin,
+		})
+	}
+	return group, participants, nil
+}
+
+// CreateGroup creates a new group with the given name and participants.
+func (c *Client) CreateGroup(ctx context.Context, name string, participants []types.JID) (Group, error) {
+	info, err := c.WA.CreateGroup(ctx, whatsmeow.ReqCreateGroup{
+		Name:         name,
+		Participants: participants,
+	})
+	if err != nil {
+		return Group{}, waerrors.Wrap(err, "creating group")
+	}
+	return Group{
+		JID:              info.JID.String(),
+		Name:             info.GroupName.Name,
+		Topic:            info.Topic,
+		ParticipantCount: len(info.Participants),
+	}, nil
+}
+
+// AddParticipants adds participants to an existing group.
+func (c *Client) AddParticipants(ctx context.Context, groupJID types.JID, participants []types.JID) error {
+	_, err := c.WA.UpdateGroupParticipants(ctx, groupJID, participants, whatsmeow.ParticipantChangeAdd)
+	if err != nil {
+		return waerrors.Wrap(err, "adding participants")
+	}
+	return nil
+}
+
+// RemoveParticipants removes participants from a group.
+func (c *Client) RemoveParticipants(ctx context.Context, groupJID types.JID, participants []types.JID) error {
+	_, err := c.WA.UpdateGroupParticipants(ctx, groupJID, participants, whatsmeow.ParticipantChangeRemove)
+	if err != nil {
+		return waerrors.Wrap(err, "removing participants")
+	}
+	return nil
 }
 
 // Connect establishes the WhatsApp connection. whatsmeow's WA.Connect()
