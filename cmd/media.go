@@ -52,38 +52,32 @@ func newMediaSendCmd(kind string) *cobra.Command {
 				return err
 			}
 
-			client, _, ms, err := connectForSend(ctx)
+			client, _, _, err := connectForSend(ctx)
 			if err != nil {
 				return err
 			}
 			defer client.Disconnect()
 
-			var msgID string
 			switch kind {
 			case "image":
-				msgID, err = client.SendImage(ctx, jid, data, mimetype, caption)
+				_, err = client.SendImage(ctx, jid, data, mimetype, caption)
 			case "video":
-				msgID, err = client.SendVideo(ctx, jid, data, mimetype, caption)
+				_, err = client.SendVideo(ctx, jid, data, mimetype, caption)
 			case "audio":
-				msgID, err = client.SendAudio(ctx, jid, data, mimetype, voice)
+				_, err = client.SendAudio(ctx, jid, data, mimetype, voice)
 			case "document":
 				name := filename
 				if name == "" {
 					name = filepath.Base(path)
 				}
-				msgID, err = client.SendDocument(ctx, jid, data, mimetype, name, caption)
+				_, err = client.SendDocument(ctx, jid, data, mimetype, name, caption)
 			case "sticker":
-				msgID, err = client.SendSticker(ctx, jid, data, mimetype)
+				_, err = client.SendSticker(ctx, jid, data, mimetype)
 			}
 			if err != nil {
 				return err
 			}
 
-			label := "[" + kind + "]"
-			if caption != "" {
-				label += " " + caption
-			}
-			recordSentMessage(ms, jid, msgID, label)
 			recordSendGuards(jid.String())
 
 			fmt.Println("Sent.")

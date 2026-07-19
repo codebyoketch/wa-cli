@@ -690,7 +690,7 @@ func (c *Client) SendImage(ctx context.Context, jid types.JID, data []byte, mime
 	if caption != "" {
 		msg.ImageMessage.Caption = proto.String(caption)
 	}
-	return c.sendMedia(ctx, jid, msg, "image")
+	return c.sendMedia(ctx, jid, msg, "image", caption)
 }
 
 // SendVideo uploads data and sends it as a video message with an
@@ -714,7 +714,7 @@ func (c *Client) SendVideo(ctx context.Context, jid types.JID, data []byte, mime
 	if caption != "" {
 		msg.VideoMessage.Caption = proto.String(caption)
 	}
-	return c.sendMedia(ctx, jid, msg, "video")
+	return c.sendMedia(ctx, jid, msg, "video", caption)
 }
 
 // SendAudio uploads data and sends it as an audio message. Set voice=true
@@ -736,7 +736,7 @@ func (c *Client) SendAudio(ctx context.Context, jid types.JID, data []byte, mime
 			PTT:           proto.Bool(voice),
 		},
 	}
-	return c.sendMedia(ctx, jid, msg, "audio")
+	return c.sendMedia(ctx, jid, msg, "audio", "")
 }
 
 // SendDocument uploads data and sends it as a document message.
@@ -760,7 +760,7 @@ func (c *Client) SendDocument(ctx context.Context, jid types.JID, data []byte, m
 	if caption != "" {
 		msg.DocumentMessage.Caption = proto.String(caption)
 	}
-	return c.sendMedia(ctx, jid, msg, "document")
+	return c.sendMedia(ctx, jid, msg, "document", caption)
 }
 
 // SendSticker uploads data and sends it as a sticker message. data
@@ -782,10 +782,10 @@ func (c *Client) SendSticker(ctx context.Context, jid types.JID, data []byte, mi
 			FileLength:    proto.Uint64(uint64(len(data))),
 		},
 	}
-	return c.sendMedia(ctx, jid, msg, "sticker")
+	return c.sendMedia(ctx, jid, msg, "sticker", "")
 }
 
-func (c *Client) sendMedia(ctx context.Context, jid types.JID, msg *waProto.Message, kind string) (string, error) {
+func (c *Client) sendMedia(ctx context.Context, jid types.JID, msg *waProto.Message, kind, caption string) (string, error) {
 	var resp whatsmeow.SendResponse
 	err := withRetry(func() error {
 		var sendErr error
@@ -795,6 +795,32 @@ func (c *Client) sendMedia(ctx context.Context, jid types.JID, msg *waProto.Mess
 	if err != nil {
 		return "", waerrors.Wrap(err, "sending "+kind)
 	}
+
+	// Record the *actual* sent message (including its real upload
+	// reference — URL/MediaKey/hashes) so it can be downloaded or
+	// forwarded again later. This has to happen here rather than in the
+	// cmd layer, which only has msgID and a caption string, not the
+	// real uploaded message object.
+	if c.msgs != nil {
+		var raw string
+		if b, err := proto.Marshal(msg); err == nil {
+			raw = base64.StdEncoding.EncodeToString(b)
+		}
+		err := c.msgs.Append(msgstore.Message{
+			ID:        resp.ID,
+			ChatJID:   jid.String(),
+			SenderJID: "me",
+			Timestamp: time.Now().UnixMilli(),
+			Text:      caption,
+			FromMe:    true,
+			MediaType: kind,
+			RawProto:  raw,
+		})
+		if err != nil {
+			c.log.Warnf("msgstore append failed for sent %s: %v", kind, err)
+		}
+	}
+
 	return resp.ID, nil
 }
 

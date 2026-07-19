@@ -117,8 +117,15 @@ var chatOpenCmd = &cobra.Command{
 			if m.FromMe {
 				who = "you"
 			}
+			text := m.Text
+			switch {
+			case m.MediaType != "" && text != "":
+				text = fmt.Sprintf("[%s] %s", m.MediaType, text)
+			case m.MediaType != "":
+				text = fmt.Sprintf("[%s]", m.MediaType)
+			}
 			ts := time.UnixMilli(m.Timestamp).Local().Format("15:04:05")
-			fmt.Printf("[%d] (%s) %s: %s\n", i+1, ts, who, m.Text)
+			fmt.Printf("[%d] (%s) %s: %s\n", i+1, ts, who, text)
 		}
 		fmt.Println("\nUse the [n] number with 'wa chat reply' or 'wa chat forward' to reference a message.")
 		return nil

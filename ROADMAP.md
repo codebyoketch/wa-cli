@@ -37,6 +37,9 @@ detailed history.
       genuine third-party participant (a self-only participant list
       correctly gets rejected by WhatsApp's server, not a bug).
 - [ ] **Phase 8 — Media**: send/download/list images, video, audio,
+      documents, stickers. Compiles clean against the pinned whatsmeow
+      version — not yet tested against a real account (no send/download
+      confirmed working at runtime).
       documents, stickers.
 - [ ] **Phase 9 — Terminal UI**: Bubble Tea / Lip Gloss / Bubbles full-screen
       chat UI.
