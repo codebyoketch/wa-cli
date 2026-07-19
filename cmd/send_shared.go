@@ -2,13 +2,16 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/codebyoketch/wa-cli/internal/chatstore"
 	"github.com/codebyoketch/wa-cli/internal/msgstore"
@@ -133,10 +136,20 @@ func recordSendGuards(jidStr string) {
 
 // recordSentMessage saves our own outgoing message into msgstore so it
 // can later be referenced by 'wa chat reply'/'wa chat forward' too.
+// RawProto is set to a plain-text reconstruction of what was actually
+// sent, so a message you sent via wa-cli can itself be forwarded later —
+// without this, only received messages (captured via ingestMessage)
+// would ever be forwardable.
 func recordSentMessage(ms *msgstore.Store, jid types.JID, msgID, text string) {
 	if ms == nil || msgID == "" {
 		return
 	}
+
+	var raw string
+	if b, err := proto.Marshal(&waProto.Message{Conversation: proto.String(text)}); err == nil {
+		raw = base64.StdEncoding.EncodeToString(b)
+	}
+
 	err := ms.Append(msgstore.Message{
 		ID:        msgID,
 		ChatJID:   jid.String(),
@@ -144,6 +157,7 @@ func recordSentMessage(ms *msgstore.Store, jid types.JID, msgID, text string) {
 		Timestamp: time.Now().UnixMilli(),
 		Text:      text,
 		FromMe:    true,
+		RawProto:  raw,
 	})
 	if err != nil {
 		a.Log.Warn("failed to record sent message", "error", err)

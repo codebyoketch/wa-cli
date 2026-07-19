@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -156,7 +157,10 @@ func syncAndLoadChats(cmd *cobra.Command) ([]chatstore.Chat, error) {
 }
 
 // resolveChat looks up a chat by exact JID first, falling back to a name
-// search and taking the top match.
+// search, then a bare phone-number JID (same fallback resolveJID uses for
+// send/reply/forward) — so open/info work on an uncached number too, not
+// just chats already synced into chatstore. A phone-number fallback
+// returns a bare Chat with no cached name/history, not an error.
 func resolveChat(target string) (chatstore.Chat, error) {
 	cs := chatstore.New(a.Config.DataDir)
 
@@ -170,10 +174,16 @@ func resolveChat(target string) (chatstore.Chat, error) {
 	if err != nil {
 		return chatstore.Chat{}, err
 	}
-	if len(results) == 0 {
-		return chatstore.Chat{}, fmt.Errorf("no chat found matching %q — try 'wa chat list' first to sync", target)
+	if len(results) > 0 {
+		return results[0], nil
 	}
-	return results[0], nil
+
+	digits := strings.TrimPrefix(target, "+")
+	if digits != "" && isAllDigits(digits) {
+		return chatstore.Chat{JID: digits + "@s.whatsapp.net"}, nil
+	}
+
+	return chatstore.Chat{}, fmt.Errorf("no chat found matching %q — try 'wa chat list' first to sync", target)
 }
 
 func printChats(chats []chatstore.Chat) {
