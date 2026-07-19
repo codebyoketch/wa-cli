@@ -127,6 +127,7 @@ func (c *Client) ingestMessage(evt *events.Message) {
 	if c.chats != nil {
 		err := c.chats.Upsert(chatstore.Chat{
 			JID:                jid,
+			Name:               evt.Info.PushName,
 			IsGroup:            evt.Info.IsGroup,
 			LastMessageAt:      evt.Info.Timestamp.UnixMilli(),
 			LastMessagePreview: preview,
@@ -210,24 +211,37 @@ func (c *Client) IsLoggedIn() bool {
 	return c.WA.Store.ID != nil
 }
 
-// Connect establishes the WhatsApp connection and gives it a moment to
-// actually finish before returning. whatsmeow's WA.Connect() only
-// *initiates* the handshake and returns immediately — sending a request
-// right after races a socket that isn't ready yet. We deliberately don't
-// gate this on *events.Connected: in testing it hasn't fired reliably
-// within any reasonable window, even on connections that demonstrably
-// succeeded (confirmed via `wa status` immediately after).
+// Connect establishes the WhatsApp connection. whatsmeow's WA.Connect()
+// only *initiates* the handshake and returns immediately — a request
+// sent right after can race a socket that isn't ready yet. Rather than a
+// blind fixed sleep here (which was slow even when unnecessary), callers
+// that immediately send a request should wrap that request in withRetry
+// instead — genuinely instant when the connection happens to be ready,
+// short backoff only when it actually isn't.
 func (c *Client) Connect(ctx context.Context) error {
 	if err := c.WA.Connect(); err != nil {
 		return waerrors.Wrap(err, "connecting to WhatsApp")
 	}
-
-	select {
-	case <-time.After(5 * time.Second):
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 	return nil
+}
+
+// withRetry attempts fn up to 4 times with short, increasing backoff.
+// Used for requests sent right after Connect(), where the first attempt
+// may race a socket that isn't fully ready yet.
+func withRetry(fn func() error) error {
+	backoffs := []time.Duration{0, 300 * time.Millisecond, 800 * time.Millisecond, 2 * time.Second}
+	var lastErr error
+	for _, wait := range backoffs {
+		if wait > 0 {
+			time.Sleep(wait)
+		}
+		if err := fn(); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+	return lastErr
 }
 
 // Login connects and, if unpaired, shows a QR code to scan. It stays
@@ -392,7 +406,10 @@ func (c *Client) Logout(ctx context.Context) error {
 	if !c.IsLoggedIn() {
 		return waerrors.ErrNotLoggedIn
 	}
-	if err := c.WA.Logout(ctx); err != nil {
+	err := withRetry(func() error {
+		return c.WA.Logout(ctx)
+	})
+	if err != nil {
 		return waerrors.Wrap(err, "logging out")
 	}
 	return nil
@@ -409,7 +426,12 @@ func (c *Client) SendText(ctx context.Context, jid types.JID, text string) (stri
 	msg := &waProto.Message{
 		Conversation: proto.String(text),
 	}
-	resp, err := c.WA.SendMessage(ctx, jid, msg)
+	var resp whatsmeow.SendResponse
+	err := withRetry(func() error {
+		var sendErr error
+		resp, sendErr = c.WA.SendMessage(ctx, jid, msg)
+		return sendErr
+	})
 	if err != nil {
 		return "", waerrors.Wrap(err, "sending message")
 	}
@@ -434,7 +456,12 @@ func (c *Client) SendReply(ctx context.Context, jid types.JID, text string, quot
 			ContextInfo: ctxInfo,
 		},
 	}
-	resp, err := c.WA.SendMessage(ctx, jid, msg)
+	var resp whatsmeow.SendResponse
+	err := withRetry(func() error {
+		var sendErr error
+		resp, sendErr = c.WA.SendMessage(ctx, jid, msg)
+		return sendErr
+	})
 	if err != nil {
 		return "", waerrors.Wrap(err, "sending reply")
 	}
@@ -475,7 +502,12 @@ func (c *Client) ForwardMessage(ctx context.Context, toJID types.JID, quoted msg
 		return "", waerrors.New("forwarding this message type isn't supported yet (text only)")
 	}
 
-	resp, err := c.WA.SendMessage(ctx, toJID, msg)
+	var resp whatsmeow.SendResponse
+	err := withRetry(func() error {
+		var sendErr error
+		resp, sendErr = c.WA.SendMessage(ctx, toJID, msg)
+		return sendErr
+	})
 	if err != nil {
 		return "", waerrors.Wrap(err, "forwarding message")
 	}
