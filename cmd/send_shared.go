@@ -18,20 +18,40 @@ import (
 	"github.com/codebyoketch/wa-cli/internal/whatsapp"
 )
 
-// resolveJID accepts either a literal WhatsApp JID (containing "@") or a
-// chat name/partial name, resolving the latter via chatstore — the same
-// lookup 'wa chat open' uses.
+// resolveJID accepts a literal WhatsApp JID (containing "@"), a chat
+// name/partial name (resolved via chatstore, same lookup 'wa chat open'
+// uses), or a bare phone number (with or without a leading "+"), which
+// gets treated as an individual JID directly — useful when chatstore's
+// local cache doesn't have this chat yet.
 func resolveJID(target string) (types.JID, error) {
 	if strings.Contains(target, "@") {
 		if jid, err := types.ParseJID(target); err == nil {
 			return jid, nil
 		}
 	}
-	chat, err := resolveChat(target)
-	if err != nil {
-		return types.JID{}, err
+
+	if chat, err := resolveChat(target); err == nil {
+		return types.ParseJID(chat.JID)
 	}
-	return types.ParseJID(chat.JID)
+
+	digits := strings.TrimPrefix(target, "+")
+	if digits != "" && isAllDigits(digits) {
+		if jid, err := types.ParseJID(digits + "@s.whatsapp.net"); err == nil {
+			return jid, nil
+		}
+	}
+
+	return types.JID{}, fmt.Errorf(
+		"no chat found matching %q, and it doesn't look like a phone number or JID — try 'wa chat list' first, or pass a full JID like 254700282181@s.whatsapp.net", target)
+}
+
+func isAllDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // resolveMessageRef looks up a message by its position in 'wa chat open's
