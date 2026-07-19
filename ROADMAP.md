@@ -19,7 +19,11 @@ detailed history.
       across CLI invocations), `wa chat list/search/info/open`.
       `open` currently shows info + marks read; full message history is
       Phase 4/5 territory once sending/receiving exist.
-- [ ] **Phase 4 — Sending Messages**: text, emoji, mentions, reply, forward.
+- [x] **Phase 4 — Sending Messages**: `wa chat send/reply/forward` — text
+      only (emoji works as plain UTF-8 text already; mentions not
+      implemented). Verified end-to-end against a real account: send,
+      reply (with quoted context), and forward (reconstructed from local
+      msgstore) all confirmed landing on the recipient's phone.
 - [x] **Phase 5 — Receiving Messages**: `wa watch` — long-running
       connection, prints incoming messages, reconnects on drops with
       backoff. Built ahead of Phase 4 (out of roadmap order) once

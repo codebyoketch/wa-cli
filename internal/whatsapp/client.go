@@ -68,7 +68,7 @@ func (c *Client) ingestHistorySync(evt *events.HistorySync) {
 	}
 	for _, conv := range evt.Data.GetConversations() {
 		jid := conv.GetID()
-		if jid == "" {
+		if jid == "" || isPseudoChat(jid) {
 			continue
 		}
 
@@ -108,9 +108,19 @@ func (c *Client) ingestHistorySync(evt *events.HistorySync) {
 }
 
 // statusBroadcastJID is WhatsApp's pseudo-chat for Status/story updates.
-// These aren't real conversations and shouldn't be printed or tracked as
-// chats.
 const statusBroadcastJID = "status@broadcast"
+
+// newsletterSuffix marks WhatsApp Channel subscriptions (e.g.
+// "120363...@newsletter"), unlike status@broadcast these don't have one
+// fixed JID, so they're matched by suffix instead of exact equality.
+const newsletterSuffix = "@newsletter"
+
+// isPseudoChat reports whether jid is a non-conversation pseudo-chat
+// (Status broadcasts, Channel/newsletter subscriptions) that shouldn't be
+// printed or tracked as a real chat.
+func isPseudoChat(jid string) bool {
+	return jid == statusBroadcastJID || strings.HasSuffix(jid, newsletterSuffix)
+}
 
 // ingestMessage keeps chatstore and msgstore current as new messages
 // arrive/are sent after the initial sync (this is what wa watch leans on
@@ -118,7 +128,7 @@ const statusBroadcastJID = "status@broadcast"
 // during `wa chat list`/`wa chat open` still looks current).
 func (c *Client) ingestMessage(evt *events.Message) {
 	jid := evt.Info.Chat.String()
-	if jid == statusBroadcastJID {
+	if isPseudoChat(jid) {
 		return
 	}
 
@@ -378,7 +388,7 @@ func (c *Client) reconnectWithBackoff(ctx context.Context) {
 // (so a later `wa chat send` reply doesn't trigger the new-recipient
 // confirmation prompt).
 func (c *Client) printIncoming(evt *events.Message, guard *safety.Guard) {
-	if evt.Info.IsFromMe || evt.Info.Chat.String() == statusBroadcastJID {
+	if evt.Info.IsFromMe || isPseudoChat(evt.Info.Chat.String()) {
 		return
 	}
 
