@@ -11,12 +11,15 @@ import (
 	"github.com/codebyoketch/wa-cli/internal/config"
 )
 
-// newTestCmd builds a minimal cobra.Command carrying its own --json flag,
-// independent of the real rootCmd tree, so these tests don't depend on
-// cmd's package-level init() side effects.
+// newTestCmd builds a minimal cobra.Command with its own --json flag,
+// independent of the real rootCmd tree. The flag is bound to the same
+// package-level jsonOutput var real rootCmd binds to — that's what
+// useJSON actually reads, so the test flag has to point at it the same
+// way, or Changed("json") comes back true while useJSON reads a
+// jsonOutput that was never touched.
 func newTestCmd() *cobra.Command {
 	c := &cobra.Command{Use: "test"}
-	c.Flags().Bool("json", false, "")
+	c.Flags().BoolVar(&jsonOutput, "json", false, "")
 	return c
 }
 
