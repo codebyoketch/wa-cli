@@ -172,12 +172,21 @@ detailed history.
       scripting with `--json`, a daily unread-chats digest, piping `wa
       watch`, sending from a script without hitting the
       confirm-new-recipient prompt, exporting chat history, writing a
-      minimal extension). Still open: an actual hosted/generated docs
-      site (what exists is markdown in the repo, not a site), generated
-      API docs (godoc/pkg.go.dev-style — package doc comments are
-      mostly there, but nothing's been generated or checked to render
-      cleanly), and real architecture diagrams (ARCHITECTURE.md has an
-      ASCII tree, not a diagram, e.g. Mermaid or an image).
+      minimal extension). Real architecture diagrams added to
+      `ARCHITECTURE.md` (Mermaid: package dependency graph, `wa login`
+      sequence, `wa chat send` sequence, `wa watch` reconnect state
+      diagram) alongside the original ASCII tree, which stays as a
+      quick-reference. Hosted docs site added: Docsify at the repo
+      root (`index.html`, `_sidebar.md`, `.nojekyll`) serves the
+      existing markdown directly with no build step and renders the
+      Mermaid diagrams client-side (`docsify-mermaid`); deployed via
+      `.github/workflows/docs.yml` (GitHub Pages, `actions/deploy-pages`,
+      triggers on any markdown/site-file change to `main`). Still open:
+      generated API docs (godoc/pkg.go.dev-style — package doc comments
+      are mostly there, but nothing's been generated or checked to
+      render cleanly). Needs `Settings → Pages → Source: GitHub Actions`
+      enabled once on the repo before the workflow's deploys will
+      actually publish.
 - [ ] **Phase 17 — Releases**: GitHub Releases, Homebrew, Scoop, AUR,
       Docker image, `go install`, prebuilt binaries.
 - [ ] **Phase 18 — v1.0**: stable, cross-platform, documented, tested.

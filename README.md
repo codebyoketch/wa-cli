@@ -6,6 +6,10 @@ A WhatsApp client for your terminal, built in Go on top of [whatsmeow](https://g
 > against a real account — see [ROADMAP.md](./ROADMAP.md) for exactly
 > what's done, what's in progress, and known issues.
 
+> **Docs:** browse this repo's docs as a site at
+> [codebyoketch.github.io/wa-cli](https://codebyoketch.github.io/wa-cli/)
+> (enable it once via repo `Settings → Pages → Source: GitHub Actions`).
+
 ## Why
 
 Scriptable, fast, terminal-first WhatsApp: send and receive messages,

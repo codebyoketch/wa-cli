@@ -32,6 +32,38 @@ main.go
 `main.go` is a two-line entrypoint that hands off to `cmd.Execute()`
 immediately — all real logic lives under `cmd/` and `internal/`.
 
+### Package dependency graph
+
+```mermaid
+graph TD
+    main["main.go"] --> cmd["cmd/ (Cobra command tree)"]
+    cmd --> app["internal/app"]
+    app --> config["internal/config"]
+    app --> logger["internal/logger"]
+
+    cmd --> whatsapp["internal/whatsapp"]
+    whatsapp --> store["internal/store (SQLite session)"]
+    whatsapp --> chatstore["internal/chatstore (JSON chat index)"]
+    whatsapp --> msgstore["internal/msgstore (JSON message history)"]
+    whatsapp --> notify["internal/notify (beeep)"]
+    whatsapp --> whatsmeow["go.mau.fi/whatsmeow"]
+
+    cmd --> tui["internal/tui (Bubble Tea)"]
+    tui --> whatsapp
+
+    cmd --> extension["internal/extension (plugin subprocesses)"]
+    cmd --> qr["internal/qr"]
+    cmd --> ratelimit["internal/ratelimit"]
+    cmd --> safety["internal/safety"]
+    cmd --> errors["internal/errors"]
+    cmd --> version["internal/version"]
+
+    style whatsmeow fill:#eee,stroke:#999,stroke-dasharray: 5 5
+```
+
+Dashed box marks the one external dependency everything in
+`internal/whatsapp` ultimately routes through.
+
 ## `cmd/` — the command tree
 
 One file per command or command group (`chat.go`, `contact.go`,
@@ -82,6 +114,74 @@ talks to WhatsApp's servers; everything else in `cmd/` goes through it.
 — not by one-shot commands that briefly construct a client (`chat list`,
 `contact list`, ...) — so a five-second `chat list` sync never pops a
 desktop notification.
+
+### `wa login` sequence
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as cmd/login.go
+    participant W as internal/whatsapp
+    participant S as internal/store (SQLite)
+    participant WM as whatsmeow
+    participant WA as WhatsApp servers
+
+    U->>C: wa login
+    C->>W: NewClient()
+    W->>S: load or create device store
+    S-->>W: empty device (no session yet)
+    W->>WM: GetQRChannel()
+    WM->>WA: request pairing
+    WA-->>WM: QR code payload
+    WM-->>W: QR events
+    W->>U: render ASCII QR (internal/qr)
+    U->>WA: scan QR with phone
+    WA-->>WM: pairing success
+    WM-->>S: persist session/device
+    W-->>C: logged in
+    C-->>U: confirmation
+```
+
+### `wa chat send` sequence
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as cmd/send.go
+    participant Sh as cmd/send_shared.go
+    participant RL as internal/ratelimit
+    participant Sf as internal/safety
+    participant W as internal/whatsapp
+    participant MS as internal/msgstore
+    participant WA as WhatsApp servers
+
+    U->>C: wa chat send <chat> <text>
+    C->>Sh: resolve recipient + checks
+    Sh->>RL: check per-minute/hour/day limits
+    RL-->>Sh: ok (or reject)
+    Sh->>Sf: confirm-new-recipient if unseen
+    Sf-->>Sh: confirmed
+    Sh->>W: SendText(jid, text)
+    W->>WA: send message
+    WA-->>W: delivery ack
+    W->>MS: record sent message
+    W-->>C: success
+    C-->>U: confirmation
+```
+
+### `wa watch` reconnect behavior
+
+```mermaid
+stateDiagram-v2
+    [*] --> Connecting
+    Connecting --> Connected: handshake ok
+    Connected --> Receiving: events stream in
+    Receiving --> Connected: message ingested (chatstore/msgstore/notify)
+    Connected --> Disconnected: socket closed / CGNAT timeout
+    Disconnected --> Backoff: schedule retry
+    Backoff --> Connecting: retry after delay
+    Receiving --> Disconnected: socket closed / CGNAT timeout
+```
 
 ## Local state: three separate stores, three separate reasons
 
