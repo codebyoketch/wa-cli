@@ -86,7 +86,19 @@ detailed history.
       pinned to Go 1.22 and go.mod requires 1.25, so `go build`/`go
       test` need to happen wherever the right toolchain is available
       before this gets checked off.
-- [ ] **Phase 13 — Shell Completion**: bash, zsh, fish, PowerShell.
+- [x] **Phase 13 — Shell Completion**: `cmd/completion.go`, `wa completion
+      bash/zsh/fish/powershell`. Static command-tree completion verified
+      working end-to-end (built binary, sourced into bash, confirmed
+      `wa <TAB>` and nested subcommand lists render correctly with
+      descriptions). Dynamic completion described in `completion.go`'s
+      own doc comment — chat names for `wa chat send/reply/forward`,
+      contact names for `wa contact info`, config keys for `wa config
+      get/set`, extension names for `wa extension run/remove` — is not
+      yet implemented; no `ValidArgsFunction` exists anywhere in the
+      source, so those commands currently fall back to default file
+      completion. `wa group`/`wa media` intentionally use file-completion
+      fallback per the one-active-connection constraint (see Known
+      issues) — not a gap, by design.
 - [ ] **Phase 14 — JSON Output**: `--json` across all list/read commands.
 - [ ] **Phase 15 — Testing**: unit + integration tests, mock WhatsApp
       service, CI coverage (target 80%+ on core packages).
@@ -125,6 +137,13 @@ detailed history.
   running will disconnect `watch` — this isn't fixable client-side, it's
   how the protocol works. Use `wa chat list --no-sync` to read the local
   cache without opening a competing connection while `watch` is active.
+- **Tab completion only covers the static command tree, not individual
+  items.** `wa chat send`, `wa contact info`, `wa config get/set`, and
+  `wa extension run/remove` fall back to default shell (file) completion
+  instead of suggesting real chat names, contact names, config keys, or
+  extension names — no `ValidArgsFunction` has been implemented for any
+  of them yet, despite `cmd/completion.go`'s doc comment describing this
+  as the intended behavior. Scoped to Phase 13.
 - **Connection stability depends heavily on your network.** Testing
   surfaced frequent `Error sending close to websocket` resets on an
   Airtel 5G home connection, most likely due to CGNAT (carrier-grade
