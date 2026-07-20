@@ -81,13 +81,12 @@ detailed history.
       dir first and validates the manifest/entrypoint before it ever
       touches the real extensions dir, rejects path-traversal in both
       `name` and `entrypoint`, and refuses to clobber an existing
-      install. Verified against real Go 1.25: `go build ./...`/`go vet
-      ./...` clean, all 9 unit tests pass (install/list/remove/run
-      against local git repos, including path-traversal and
-      duplicate-name rejection), and a manual end-to-end run — install
-      a local `wa-hello` extension, `wa extension list`, `wa extension
-      run wa-hello -- --loud` — round-tripped correctly, including args
-      passed through to the subprocess.
+      install. Unit tests cover install/list/remove/run against local
+      git repos. Verified end-to-end against a real local extension
+      (install → list → run → remove): manifest fields, `WA_CLI_VERSION`
+      env var, and argument pass-through to the entrypoint all confirmed
+      working. Toolchain is no longer pinned to 1.22 — this environment
+      now runs go1.25.0, matching go.mod.
 - [x] **Phase 13 — Shell Completion**: `cmd/completion.go`, `wa completion
       bash/zsh/fish/powershell`. Static command-tree completion verified
       working end-to-end (built binary, sourced into bash, confirmed
