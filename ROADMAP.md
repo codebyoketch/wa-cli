@@ -50,14 +50,42 @@ detailed history.
       account — including fixes for stdout log corruption, chat-name
       flip-flop, missing group names, and WhatsApp-style message
       alignment/sender names.
-- [ ] **Phase 10 — Notifications**: desktop notifications via
-      internal/notify (beeep), opt-in per-caller (wa watch + TUI only —
-      not other commands that briefly touch the same code path). Global
-      notifyEnabled/notifyGroups/notifyShowPreview config, per-chat mute
-      via `wa chat mute/unmute`. Not yet tested against a real account
-      or verified that notify-send/beeep actually works on this system.
-- [ ] **Phase 11 — Configuration**: `wa config set/get/edit`.
-- [ ] **Phase 12 — Plugins**: `wa extension install/list/remove`.
+- [x] **Phase 10 — Notifications**: `internal/notify` (beeep) wraps OS
+      desktop notifications; `SetNotifications` wires it in explicitly
+      from `wa watch` and the TUI only, so one-shot commands that briefly
+      touch the same client code path never pop a notification.
+      Delivery is gated in `internal/whatsapp/client.go` on
+      `notifyEnabled`, skips messages from self, respects
+      `notifyGroups` (group chats opt-in separately from DMs), checks
+      per-chat `Muted` via `chatstore` before sending, and — when
+      `notifyShowPreview` is on — includes message text and/or media
+      type in the body. All four settings
+      (notifyEnabled/notifyGroups/notifyShowPreview, plus mute state)
+      are configurable via `wa config set` and `wa chat mute/unmute`.
+- [x] **Phase 11 — Configuration**: `wa config get/set/edit/init`.
+      `configFields` is a single source-of-truth table (name, typed
+      getter, validating setter) covering every config key — including
+      the Phase 10 notify settings above — so `get` and `set` can't
+      drift out of sync. `get` prints one key or the whole table with
+      the config file path; `set` validates and saves immediately;
+      `edit` opens `$EDITOR`/`$VISUAL`/`vi` on the JSON file and
+      re-validates on exit, leaving the file untouched if the edit
+      broke it; `init` writes out defaults.
+- [ ] **Phase 12 — Plugins**: `wa extension install/list/remove/run` —
+      `internal/extension`, `cmd/extension.go`. Extensions are git repos
+      with a `wa-extension.json` manifest (name/description/entrypoint)
+      cloned into `extensions/<name>` under the config dir; they run as
+      plain subprocesses (not Go plugins — `.so` requires an exact
+      toolchain match and doesn't exist on Windows, which would break
+      the Phase 0 cross-platform milestone). `install` clones to a temp
+      dir first and validates the manifest/entrypoint before it ever
+      touches the real extensions dir, rejects path-traversal in both
+      `name` and `entrypoint`, and refuses to clobber an existing
+      install. Unit tests cover install/list/remove/run against local
+      git repos. Not yet built or run for real — this environment is
+      pinned to Go 1.22 and go.mod requires 1.25, so `go build`/`go
+      test` need to happen wherever the right toolchain is available
+      before this gets checked off.
 - [ ] **Phase 13 — Shell Completion**: bash, zsh, fish, PowerShell.
 - [ ] **Phase 14 — JSON Output**: `--json` across all list/read commands.
 - [ ] **Phase 15 — Testing**: unit + integration tests, mock WhatsApp

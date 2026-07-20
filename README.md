@@ -13,7 +13,7 @@ automation, and an optional full-screen TUI down the line.
 
 ## Install
 
-Requires Go 1.22+.
+Requires Go 1.25+.
 
 ```sh
 go install github.com/codebyoketch/wa-cli@latest
