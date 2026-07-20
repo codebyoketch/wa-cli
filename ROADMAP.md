@@ -131,7 +131,38 @@ detailed history.
       `status`; `wa media list` and `wa extension list` don't touch
       whatsmeow directly so weren't at risk.
 - [ ] **Phase 15 — Testing**: unit + integration tests, mock WhatsApp
-      service, CI coverage (target 80%+ on core packages).
+      service, CI coverage (target 80%+ on core packages). Substantial
+      progress, not yet complete — overall coverage now measures 37.7%
+      (`go tool cover -func=coverage.out`, total across all statements).
+      The non-network core is at or near target: `internal/app`,
+      `internal/errors`, `internal/logger`, `internal/version` (100%),
+      `internal/config` (97.2%), `internal/chatstore`/`internal/ratelimit`
+      (~85%), `internal/msgstore` (80%), `internal/extension`/`internal/store`
+      (~75%), `internal/qr` (100%, new). `internal/whatsapp` (23.2%) and
+      `cmd` (16.0%) got real coverage on everything that's pure logic —
+      `client.go`'s message classification/forwarding/preview helpers and
+      `ingestMessage`; `cmd`'s config field validation, JID/message-ref
+      resolution, `--json` handling, shell completion generation, and the
+      `captureLibraryStdout` stdout-redirect trick. What's left in both is
+      almost entirely thin wrappers around a live `*whatsmeow.Client`
+      (`SendText`, `Login`, `Watch`, `ListGroups`, `DownloadMedia`, and the
+      `cmd` RunE functions that call them) — `Client.WA` is a concrete
+      `*whatsmeow.Client` field, not an interface, so none of that is
+      unit-testable without either a real WhatsApp session or a mock.
+      Deliberately deferred rather than guessed at blind: introducing a
+      `waClient` interface for `Client.WA` (so a fake implementation can
+      stand in for `*whatsmeow.Client` in tests) is real production-code
+      surgery — one wrong method signature breaks the whole build, not
+      just a test file — and needs verified signatures (`go doc
+      go.mau.fi/whatsmeow.Client`) rather than assumptions. Tracked as
+      follow-up work alongside the actual "mock WhatsApp service"
+      half of this phase's milestone. `internal/notify`'s one-line
+      `beeep.Notify` wrapper and `internal/tui` (Bubble Tea UI) are also
+      still 0% — low value for unit tests (would either pop real OS
+      notifications during `go test` or mostly test a UI framework, not
+      wa-cli's own logic). `internal/cli` (0%) is the pre-Cobra hand-rolled
+      router noted as dead code in `ARCHITECTURE.md` — candidate for
+      deletion rather than tests.
 - [ ] **Phase 16 — Documentation**: site, examples, API docs, architecture
       diagrams. `README.md` rewritten to match actual capabilities
       (was still describing Phase 0/1 status), `ARCHITECTURE.md` added

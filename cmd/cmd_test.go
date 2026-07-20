@@ -6,7 +6,12 @@ package cmd
 // `go test ./cmd/... -run 'TestIsAllDigits|TestResolve|TestRecordSentMessage' -v` locally.
 
 import (
+	"errors"
+	"fmt"
 	"io"
+	"os"
+	"bytes"
+	"strings"
 	"log/slog"
 	"testing"
 
@@ -16,6 +21,176 @@ import (
 	"github.com/codebyoketch/wa-cli/internal/msgstore"
 )
 
+// NOTE: written without a working Go 1.25 toolchain in the authoring
+// sandbox (see internal/whatsapp/client_test.go's header comment for
+// why) — syntax-checked with gofmt only. Please run
+// `go test ./cmd/... -run TestCaptureLibraryStdout -v` locally.
+
+func TestCaptureLibraryStdout_RedirectsDuringCall(t *testing.T) {
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	// Substitute os.Stderr for the duration of the test so we can
+	// observe what captureLibraryStdout redirects os.Stdout *to*,
+	// without polluting the real test output.
+	origStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	var sawDuringCall *os.File
+	callErr := captureLibraryStdout(func() error {
+		sawDuringCall = os.Stdout
+		fmt.Println("this should land on stderr, not stdout")
+		return nil
+	})
+	if callErr != nil {
+		t.Fatalf("captureLibraryStdout: unexpected error: %v", callErr)
+	}
+
+	if sawDuringCall != os.Stderr {
+		t.Error("expected os.Stdout to be redirected to os.Stderr during fn")
+	}
+	if os.Stdout != origStdout {
+		t.Error("expected os.Stdout to be restored after captureLibraryStdout returns")
+	}
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("closing pipe writer: %v", err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("reading captured output: %v", err)
+	}
+	if len(out) == 0 {
+		t.Error("expected fn's println to have landed on the redirected stream")
+	}
+}
+
+func TestCaptureLibraryStdout_RestoresStdoutEvenOnError(t *testing.T) {
+	origStdout := os.Stdout
+	wantErr := errors.New("boom")
+
+	gotErr := captureLibraryStdout(func() error {
+		return wantErr
+	})
+
+	if !errors.Is(gotErr, wantErr) {
+		t.Errorf("captureLibraryStdout error = %v, want %v", gotErr, wantErr)
+	}
+	if os.Stdout != origStdout {
+		t.Error("expected os.Stdout to be restored even when fn returns an error")
+	}
+}
+
+// NOTE: written without a working Go 1.25 toolchain in the authoring
+// sandbox (see internal/whatsapp/client_test.go's header comment for
+// why) — syntax-checked with gofmt only. Please run
+// `go test ./cmd/... -run TestVersionCmd -v` locally.
+
+func TestVersionCmd_PrintsVersionString(t *testing.T) {
+	c := newTestCmd()
+	var buf bytes.Buffer
+	c.SetOut(&buf)
+
+	if err := versionCmd.RunE(c, nil); err != nil {
+		t.Fatalf("versionCmd.RunE: unexpected error: %v", err)
+	}
+
+	if strings.TrimSpace(buf.String()) == "" {
+		t.Error("expected non-empty version output")
+	}
+}
+
+// captureStdout runs fn and returns whatever it wrote to os.Stdout.
+// Needed here because the completion RunE funcs write straight to
+// os.Stdout (via cobra's Gen*Completion helpers) rather than
+// cmd.OutOrStdout(), so SetOut(buf) alone wouldn't capture anything.
+func captureStdout(t *testing.T, fn func() error) (string, error) {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+
+	fnErr := fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("closing pipe writer: %v", err)
+	}
+	os.Stdout = orig
+
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("reading captured stdout: %v", err)
+	}
+	return string(out), fnErr
+}
+
+func TestCompletionCmd_Bash(t *testing.T) {
+	out, err := captureStdout(t, func() error {
+		return completionCmd.RunE(completionCmd, []string{"bash"})
+	})
+	if err != nil {
+		t.Fatalf("completion bash: unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "bash completion") && !strings.Contains(out, "complete") {
+		t.Errorf("expected bash-completion-looking output, got %d bytes starting %q", len(out), firstN(out, 60))
+	}
+}
+
+func TestCompletionCmd_Zsh(t *testing.T) {
+	out, err := captureStdout(t, func() error {
+		return completionCmd.RunE(completionCmd, []string{"zsh"})
+	})
+	if err != nil {
+		t.Fatalf("completion zsh: unexpected error: %v", err)
+	}
+	if len(out) == 0 {
+		t.Error("expected non-empty zsh completion output")
+	}
+}
+
+func TestCompletionCmd_Fish(t *testing.T) {
+	out, err := captureStdout(t, func() error {
+		return completionCmd.RunE(completionCmd, []string{"fish"})
+	})
+	if err != nil {
+		t.Fatalf("completion fish: unexpected error: %v", err)
+	}
+	if len(out) == 0 {
+		t.Error("expected non-empty fish completion output")
+	}
+}
+
+func TestCompletionCmd_PowerShell(t *testing.T) {
+	out, err := captureStdout(t, func() error {
+		return completionCmd.RunE(completionCmd, []string{"powershell"})
+	})
+	if err != nil {
+		t.Fatalf("completion powershell: unexpected error: %v", err)
+	}
+	if len(out) == 0 {
+		t.Error("expected non-empty powershell completion output")
+	}
+}
+
+func TestCompletionCmd_RejectsUnknownShell(t *testing.T) {
+	err := completionCmd.Args(completionCmd, []string{"tcsh"})
+	if err == nil {
+		t.Error("expected an unknown shell name to be rejected by Args validation")
+	}
+}
+
+func firstN(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
 func TestFindConfigField_CaseInsensitive(t *testing.T) {
 	if _, ok := findConfigField("LOGLEVEL"); !ok {
 		t.Error("expected case-insensitive match for LOGLEVEL")
