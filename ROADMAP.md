@@ -71,7 +71,7 @@ detailed history.
       `edit` opens `$EDITOR`/`$VISUAL`/`vi` on the JSON file and
       re-validates on exit, leaving the file untouched if the edit
       broke it; `init` writes out defaults.
-- [ ] **Phase 12 — Plugins**: `wa extension install/list/remove/run` —
+- [x] **Phase 12 — Plugins**: `wa extension install/list/remove/run` —
       `internal/extension`, `cmd/extension.go`. Extensions are git repos
       with a `wa-extension.json` manifest (name/description/entrypoint)
       cloned into `extensions/<name>` under the config dir; they run as
@@ -81,11 +81,13 @@ detailed history.
       dir first and validates the manifest/entrypoint before it ever
       touches the real extensions dir, rejects path-traversal in both
       `name` and `entrypoint`, and refuses to clobber an existing
-      install. Unit tests cover install/list/remove/run against local
-      git repos. Not yet built or run for real — this environment is
-      pinned to Go 1.22 and go.mod requires 1.25, so `go build`/`go
-      test` need to happen wherever the right toolchain is available
-      before this gets checked off.
+      install. Verified against real Go 1.25: `go build ./...`/`go vet
+      ./...` clean, all 9 unit tests pass (install/list/remove/run
+      against local git repos, including path-traversal and
+      duplicate-name rejection), and a manual end-to-end run — install
+      a local `wa-hello` extension, `wa extension list`, `wa extension
+      run wa-hello -- --loud` — round-tripped correctly, including args
+      passed through to the subprocess.
 - [x] **Phase 13 — Shell Completion**: `cmd/completion.go`, `wa completion
       bash/zsh/fish/powershell`. Static command-tree completion verified
       working end-to-end (built binary, sourced into bash, confirmed
