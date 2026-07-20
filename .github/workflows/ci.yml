@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test (with race detector)
+        # -race requires cgo + a C compiler. ubuntu-latest and
+        # macos-latest have one preinstalled; windows-latest does not
+        # by default, so it runs a plain (race-free) test instead
+        # rather than failing the job on a missing toolchain that has
+        # nothing to do with wa-cli's own code.
+        if: matrix.os != 'windows-latest'
+        run: go test -race -cover -coverprofile=coverage.out ./...
+
+      - name: Test
+        if: matrix.os == 'windows-latest'
+        run: go test -cover -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        # Only one leg needs to upload — avoids three redundant artifacts
+        # for the same commit.
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.0"
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.6

@@ -1,0 +1,32 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose    # catches unclosed HTTP response bodies
+    - copyloopvar  # Go 1.22+ loop-variable footguns
+    - errorlint    # errors.Is/As-friendly wrapping, matches internal/errors' style
+    - gocritic      # broad, low-noise correctness/style checks
+    - gosec        # security-focused static analysis
+    - misspell
+    - nilerr       # returning nil after checking err != nil
+    - unconvert
+    - unparam      # unused function parameters
+
+  exclusions:
+    rules:
+      # Test helpers legitimately call t.Fatalf instead of propagating
+      # errors, and table-driven tests often have unused table fields
+      # by design.
+      - path: _test\.go
+        linters:
+          - unparam
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
