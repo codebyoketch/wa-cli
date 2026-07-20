@@ -99,7 +99,30 @@ detailed history.
       completion. `wa group`/`wa media` intentionally use file-completion
       fallback per the one-active-connection constraint (see Known
       issues) — not a gap, by design.
-- [ ] **Phase 14 — JSON Output**: `--json` across all list/read commands.
+- [x] **Phase 14 — JSON Output**: persistent `--json` flag (`cmd/json.go`)
+      wired into every list/read command: `wa chat list/search/info/open`,
+      `wa contact list/search/info`, `wa group list/info`, `wa media
+      list`, `wa status`, `wa extension list`. `--json` overrides the
+      `jsonOutput` config default in either direction for a single call;
+      with neither set, falls back to `jsonOutput` from config (so
+      scripted/agent use can set it once via `wa config set jsonOutput
+      true` instead of passing `--json` everywhere). Empty results
+      marshal as `[]`, never `null`. Added missing `json:"..."` tags to
+      `whatsapp.Contact`/`Group`/`Participant` and
+      `extension.Extension.Path` to match the camelCase convention
+      `chatstore.Chat`/`msgstore.Message` already used.
+      Verified against a real account — surfaced and fixed a real bug in
+      the process: whatsmeow's `waLog.Stdout(...)` writes log lines
+      directly to the process-wide `os.Stdout` with no injectable
+      writer, so a WARN during `wa chat list --json`'s sync landed ahead
+      of the JSON and broke `jq` parsing. Fixed with a shared
+      `captureLibraryStdout` helper (`cmd/stdlog.go`) that redirects
+      `os.Stdout` to `os.Stderr` for the duration of any whatsmeow call —
+      same trick Phase 9's TUI already used for the same underlying
+      problem, generalized for one-shot commands. Wired into
+      `syncAndLoadChats`, `loadContacts`, `group list`/`info`, and
+      `status`; `wa media list` and `wa extension list` don't touch
+      whatsmeow directly so weren't at risk.
 - [ ] **Phase 15 — Testing**: unit + integration tests, mock WhatsApp
       service, CI coverage (target 80%+ on core packages).
 - [ ] **Phase 16 — Documentation**: site, examples, API docs, architecture
@@ -131,6 +154,16 @@ detailed history.
   history sync (explicitly requesting older data), which isn't
   implemented — scoped as a possible future addition to Phase 3, not
   currently planned.
+- **`wa chat list`/`--json` sometimes shows an empty `name` for a chat
+  that has one.** Seen on a real account: a group and a 1:1 chat both
+  came back with `"name": ""` in `wa chat list --json` output, even
+  though the chat clearly has a name in WhatsApp itself. Not yet
+  root-caused — candidates are the same one-time-`HistorySync` timing
+  gap noted above (name arrives in a later sync than the chat entry
+  itself), or a gap specific to the JSON path vs. the human-readable
+  `printChats` path, which hasn't been directly compared side-by-side
+  on the same data yet. Needs reproduction with `wa chat list` (non-JSON)
+  against the same chats to tell which it is.
 - **Only one wa-cli connection can be active at a time, by WhatsApp's
   design.** WhatsApp allows one active connection per linked device.
   Running `wa chat list` (or any connecting command) while `wa watch` is

@@ -32,16 +32,14 @@ var chatListCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			printChats(chats)
-			return nil
+			return outputChats(cmd, chats)
 		}
 
 		chats, err := syncAndLoadChats(cmd)
 		if err != nil {
 			return err
 		}
-		printChats(chats)
-		return nil
+		return outputChats(cmd, chats)
 	},
 }
 
@@ -60,8 +58,7 @@ var chatSearchCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		printChats(results)
-		return nil
+		return outputChats(cmd, results)
 	},
 }
 
@@ -73,6 +70,9 @@ var chatInfoCmd = &cobra.Command{
 		chat, err := resolveChat(args[0])
 		if err != nil {
 			return err
+		}
+		if useJSON(cmd) {
+			return printJSON(cmd, chat)
 		}
 		fmt.Printf("JID:            %s\n", chat.JID)
 		fmt.Printf("Name:           %s\n", chat.Name)
@@ -107,6 +107,12 @@ var chatOpenCmd = &cobra.Command{
 		msgs, err := ms.List(chat.JID)
 		if err != nil {
 			return err
+		}
+		if useJSON(cmd) {
+			return printJSON(cmd, struct {
+				Chat     chatstore.Chat     `json:"chat"`
+				Messages []msgstore.Message `json:"messages"`
+			}{chat, msgs})
 		}
 		if len(msgs) == 0 {
 			fmt.Println("No local message history yet. Run 'wa watch' for a while, or send/receive a message, to build it up.")
@@ -181,25 +187,30 @@ func init() {
 // on every `wa chat list` call — `wa watch` (Phase 5) is the long-running
 // alternative for staying continuously in sync.
 func syncAndLoadChats(cmd *cobra.Command) ([]chatstore.Chat, error) {
-	ctx := context.Background()
-	dbLog := waLog.Stdout("Database", "WARN", true)
+	var chats []chatstore.Chat
+	err := captureLibraryStdout(func() error {
+		ctx := context.Background()
+		dbLog := waLog.Stdout("Database", "WARN", true)
 
-	container, err := store.Open(ctx, a.Config.DataDir, dbLog)
-	if err != nil {
-		return nil, err
-	}
+		container, err := store.Open(ctx, a.Config.DataDir, dbLog)
+		if err != nil {
+			return err
+		}
 
-	cs := chatstore.New(a.Config.DataDir)
-	client, err := whatsapp.New(ctx, container, dbLog, cs, msgstore.New(a.Config.DataDir))
-	if err != nil {
-		return nil, err
-	}
+		cs := chatstore.New(a.Config.DataDir)
+		client, err := whatsapp.New(ctx, container, dbLog, cs, msgstore.New(a.Config.DataDir))
+		if err != nil {
+			return err
+		}
 
-	if err := client.SyncChats(ctx, 2*time.Second); err != nil {
-		return nil, err
-	}
+		if err := client.SyncChats(ctx, 2*time.Second); err != nil {
+			return err
+		}
 
-	return cs.List()
+		chats, err = cs.List()
+		return err
+	})
+	return chats, err
 }
 
 // resolveChat looks up a chat by exact JID first, falling back to a name
@@ -230,6 +241,19 @@ func resolveChat(target string) (chatstore.Chat, error) {
 	}
 
 	return chatstore.Chat{}, fmt.Errorf("no chat found matching %q — try 'wa chat list' first to sync", target)
+}
+
+// outputChats writes chats as JSON if requested, otherwise falls back to
+// the existing human-readable printChats.
+func outputChats(cmd *cobra.Command, chats []chatstore.Chat) error {
+	if useJSON(cmd) {
+		if chats == nil {
+			chats = []chatstore.Chat{} // marshal as [] not null
+		}
+		return printJSON(cmd, chats)
+	}
+	printChats(chats)
+	return nil
 }
 
 func printChats(chats []chatstore.Chat) {

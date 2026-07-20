@@ -22,16 +22,27 @@ var groupListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List groups you're a member of",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
-		client, err := connectClient(ctx)
+		var groups []whatsapp.Group
+		err := captureLibraryStdout(func() error {
+			ctx := context.Background()
+			client, err := connectClient(ctx)
+			if err != nil {
+				return err
+			}
+			defer client.Disconnect()
+
+			groups, err = client.ListGroups(ctx)
+			return err
+		})
 		if err != nil {
 			return err
 		}
-		defer client.Disconnect()
 
-		groups, err := client.ListGroups(ctx)
-		if err != nil {
-			return err
+		if useJSON(cmd) {
+			if groups == nil {
+				groups = []whatsapp.Group{}
+			}
+			return printJSON(cmd, groups)
 		}
 		if len(groups) == 0 {
 			fmt.Println("No groups found.")
@@ -49,21 +60,33 @@ var groupInfoCmd = &cobra.Command{
 	Short: "Show details and participants for one group",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
-		client, err := connectClient(ctx)
+		var group whatsapp.Group
+		var participants []whatsapp.Participant
+		err := captureLibraryStdout(func() error {
+			ctx := context.Background()
+			client, err := connectClient(ctx)
+			if err != nil {
+				return err
+			}
+			defer client.Disconnect()
+
+			jid, err := resolveGroupJID(client, ctx, args[0])
+			if err != nil {
+				return err
+			}
+
+			group, participants, err = client.GroupInfo(ctx, jid)
+			return err
+		})
 		if err != nil {
 			return err
 		}
-		defer client.Disconnect()
 
-		jid, err := resolveGroupJID(client, ctx, args[0])
-		if err != nil {
-			return err
-		}
-
-		group, participants, err := client.GroupInfo(ctx, jid)
-		if err != nil {
-			return err
+		if useJSON(cmd) {
+			return printJSON(cmd, struct {
+				Group        whatsapp.Group         `json:"group"`
+				Participants []whatsapp.Participant `json:"participants"`
+			}{group, participants})
 		}
 
 		fmt.Printf("Name:  %s\n", group.Name)

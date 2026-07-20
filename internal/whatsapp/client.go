@@ -339,10 +339,10 @@ func (c *Client) IsLoggedIn() bool {
 
 // Contact is a simplified view of a WhatsApp contact.
 type Contact struct {
-	JID          string
-	Name         string // best available: FullName > FirstName > PushName > BusinessName
-	PushName     string
-	BusinessName string
+	JID          string `json:"jid"`
+	Name         string `json:"name,omitempty"` // best available: FullName > FirstName > PushName > BusinessName
+	PushName     string `json:"pushName,omitempty"`
+	BusinessName string `json:"businessName,omitempty"`
 }
 
 // ListContacts returns all locally known contacts, sorted by name. This
@@ -387,17 +387,17 @@ func bestContactName(info types.ContactInfo) string {
 
 // Group is a simplified view of a WhatsApp group.
 type Group struct {
-	JID              string
-	Name             string
-	Topic            string
-	ParticipantCount int
+	JID              string `json:"jid"`
+	Name             string `json:"name"`
+	Topic            string `json:"topic,omitempty"`
+	ParticipantCount int    `json:"participantCount"`
 }
 
 // Participant is one member of a group.
 type Participant struct {
-	JID          string
-	IsAdmin      bool
-	IsSuperAdmin bool
+	JID          string `json:"jid"`
+	IsAdmin      bool   `json:"isAdmin,omitempty"`
+	IsSuperAdmin bool   `json:"isSuperAdmin,omitempty"`
 }
 
 // ListGroups returns all groups the account is currently a member of.

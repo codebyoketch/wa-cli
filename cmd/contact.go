@@ -30,8 +30,7 @@ var contactListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		printContacts(contacts)
-		return nil
+		return outputContacts(cmd, contacts)
 	},
 }
 
@@ -54,8 +53,7 @@ var contactSearchCmd = &cobra.Command{
 				results = append(results, c)
 			}
 		}
-		printContacts(results)
-		return nil
+		return outputContacts(cmd, results)
 	},
 }
 
@@ -74,8 +72,7 @@ var contactInfoCmd = &cobra.Command{
 		// Exact match first (JID or name).
 		for _, c := range contacts {
 			if c.JID == target || strings.EqualFold(c.Name, target) {
-				printContactDetail(c)
-				return nil
+				return outputContactDetail(cmd, c)
 			}
 		}
 
@@ -83,8 +80,7 @@ var contactInfoCmd = &cobra.Command{
 		q := strings.ToLower(target)
 		for _, c := range contacts {
 			if strings.Contains(strings.ToLower(c.Name), q) || strings.Contains(c.JID, target) {
-				printContactDetail(c)
-				return nil
+				return outputContactDetail(cmd, c)
 			}
 		}
 
@@ -98,23 +94,47 @@ func init() {
 }
 
 func loadContacts() ([]whatsapp.Contact, error) {
-	ctx := context.Background()
-	dbLog := waLog.Stdout("Database", "WARN", true)
+	var contacts []whatsapp.Contact
+	err := captureLibraryStdout(func() error {
+		ctx := context.Background()
+		dbLog := waLog.Stdout("Database", "WARN", true)
 
-	container, err := store.Open(ctx, a.Config.DataDir, dbLog)
-	if err != nil {
-		return nil, err
-	}
+		container, err := store.Open(ctx, a.Config.DataDir, dbLog)
+		if err != nil {
+			return err
+		}
 
-	client, err := whatsapp.New(ctx, container, dbLog, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	if !client.IsLoggedIn() {
-		return nil, fmt.Errorf("not logged in: run 'wa login' first")
-	}
+		client, err := whatsapp.New(ctx, container, dbLog, nil, nil)
+		if err != nil {
+			return err
+		}
+		if !client.IsLoggedIn() {
+			return fmt.Errorf("not logged in: run 'wa login' first")
+		}
 
-	return client.ListContacts(ctx)
+		contacts, err = client.ListContacts(ctx)
+		return err
+	})
+	return contacts, err
+}
+
+func outputContacts(cmd *cobra.Command, contacts []whatsapp.Contact) error {
+	if useJSON(cmd) {
+		if contacts == nil {
+			contacts = []whatsapp.Contact{}
+		}
+		return printJSON(cmd, contacts)
+	}
+	printContacts(contacts)
+	return nil
+}
+
+func outputContactDetail(cmd *cobra.Command, c whatsapp.Contact) error {
+	if useJSON(cmd) {
+		return printJSON(cmd, c)
+	}
+	printContactDetail(c)
+	return nil
 }
 
 func printContacts(contacts []whatsapp.Contact) {

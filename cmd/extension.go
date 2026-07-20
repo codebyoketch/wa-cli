@@ -56,12 +56,19 @@ var extensionListCmd = &cobra.Command{
 			fmt.Fprintf(cmd.ErrOrStderr(), "warning: %v\n", err)
 		}
 
+		sort.Slice(exts, func(i, j int) bool { return exts[i].Name < exts[j].Name })
+
+		if useJSON(cmd) {
+			if exts == nil {
+				exts = []extension.Extension{}
+			}
+			return printJSON(cmd, exts)
+		}
+
 		if len(exts) == 0 {
 			fmt.Fprintln(out, "No extensions installed. Install one with 'wa extension install <git-url>'.")
 			return nil
 		}
-
-		sort.Slice(exts, func(i, j int) bool { return exts[i].Name < exts[j].Name })
 
 		width := 0
 		for _, e := range exts {

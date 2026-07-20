@@ -72,7 +72,7 @@ func (m Manifest) validate() error {
 type Extension struct {
 	Manifest
 	// Path is the extension's install directory (repo root).
-	Path string
+	Path string `json:"path"`
 }
 
 // entrypointPath returns the absolute path to the extension's entrypoint

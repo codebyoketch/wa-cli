@@ -191,25 +191,47 @@ var mediaListCmd = &cobra.Command{
 			return err
 		}
 
-		found := false
-		for i, m := range msgs {
-			if m.MediaType == "" {
-				continue
+		var mediaMsgs []msgstore.Message
+		for _, m := range msgs {
+			if m.MediaType != "" {
+				mediaMsgs = append(mediaMsgs, m)
 			}
-			found = true
+		}
+
+		if useJSON(cmd) {
+			if mediaMsgs == nil {
+				mediaMsgs = []msgstore.Message{}
+			}
+			return printJSON(cmd, mediaMsgs)
+		}
+
+		if len(mediaMsgs) == 0 {
+			fmt.Println("No media messages in local history for this chat.")
+			return nil
+		}
+		for _, m := range mediaMsgs {
+			// i+1 in the old output referenced the position within the
+			// full message history (matching 'wa chat open's numbering,
+			// which 'wa media download' accepts as <message-ref>), not
+			// the position within this filtered list — preserve that by
+			// looking the message back up in msgs.
+			idx := 0
+			for j, full := range msgs {
+				if full.ID == m.ID {
+					idx = j + 1
+					break
+				}
+			}
 			who := "them"
 			if m.FromMe {
 				who = "you"
 			}
 			ts := time.UnixMilli(m.Timestamp).Local().Format("15:04:05")
-			fmt.Printf("[%d] (%s) %s sent %s %s", i+1, ts, who, articleFor(m.MediaType), m.MediaType)
+			fmt.Printf("[%d] (%s) %s sent %s %s", idx, ts, who, articleFor(m.MediaType), m.MediaType)
 			if m.Text != "" {
 				fmt.Printf(": %s", m.Text)
 			}
 			fmt.Println()
-		}
-		if !found {
-			fmt.Println("No media messages in local history for this chat.")
 		}
 		return nil
 	},
