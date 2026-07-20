@@ -137,3 +137,137 @@ func TestLoad_CorruptFileReturnsError(t *testing.T) {
 		t.Fatal("Load() with a corrupt config file should return an error, not silently succeed")
 	}
 }
+
+// skipIfWindows and skipIfRoot guard the OS-failure tests below: POSIX
+// permission bits aren't meaningful on Windows, and root ignores them
+// entirely (common in CI containers), so both would make these tests
+// falsely pass instead of skip.
+func skipIfWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits aren't meaningful on Windows")
+	}
+}
+
+func skipIfRoot(t *testing.T) {
+	t.Helper()
+	if os.Getuid() == 0 {
+		t.Skip("running as root ignores permission bits")
+	}
+}
+
+// clearHomeEnv unsets both env vars os.UserConfigDir consults on Unix, so
+// it fails exactly the way it would on a system with a genuinely broken
+// environment (no $XDG_CONFIG_HOME and no $HOME).
+func clearHomeEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+}
+
+func TestDir_UserConfigDirFailurePropagates(t *testing.T) {
+	skipIfWindows(t)
+	clearHomeEnv(t)
+
+	if _, err := Dir(); err == nil {
+		t.Fatal("Dir() should error when neither $XDG_CONFIG_HOME nor $HOME are set")
+	}
+}
+
+func TestDir_MkdirAllFailurePropagates(t *testing.T) {
+	skipIfWindows(t)
+
+	home := t.TempDir()
+	// A regular file where a path component needs to be a directory makes
+	// MkdirAll fail with "not a directory", exercising Dir()'s own error
+	// wrap around the MkdirAll call (distinct from UserConfigDir failing).
+	blocked := filepath.Join(home, "blocked")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(blocked, "sub"))
+
+	if _, err := Dir(); err == nil {
+		t.Fatal("Dir() should error when a path component exists as a file, not a directory")
+	}
+}
+
+func TestDefault_FallsBackToDotWhenDirFails(t *testing.T) {
+	skipIfWindows(t)
+	clearHomeEnv(t)
+
+	cfg := Default()
+	if want := filepath.Join(".", "data"); cfg.DataDir != want {
+		t.Fatalf("Default().DataDir = %q, want %q when Dir() fails", cfg.DataDir, want)
+	}
+}
+
+func TestPath_ErrorsWhenDirFails(t *testing.T) {
+	skipIfWindows(t)
+	clearHomeEnv(t)
+
+	if _, err := Path(); err == nil {
+		t.Fatal("Path() should error when Dir() fails")
+	}
+}
+
+func TestLoad_ErrorsWhenPathFails(t *testing.T) {
+	skipIfWindows(t)
+	clearHomeEnv(t)
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() should error when Path() (and so Dir()) fails")
+	}
+}
+
+func TestSave_ErrorsWhenPathFails(t *testing.T) {
+	skipIfWindows(t)
+	clearHomeEnv(t)
+
+	if err := Save(Default()); err == nil {
+		t.Fatal("Save() should error when Path() (and so Dir()) fails")
+	}
+}
+
+func TestLoad_ReadPermissionDeniedReturnsError(t *testing.T) {
+	skipIfWindows(t)
+	skipIfRoot(t)
+	withTempConfigHome(t)
+
+	path, err := Path()
+	if err != nil {
+		t.Fatalf("Path: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	// Restore read permission so t.TempDir()'s cleanup can remove it.
+	defer os.Chmod(path, 0o600)
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() should error when the config file isn't readable")
+	}
+}
+
+func TestSave_WritePermissionDeniedReturnsError(t *testing.T) {
+	skipIfWindows(t)
+	skipIfRoot(t)
+	withTempConfigHome(t)
+
+	dir, err := Dir()
+	if err != nil {
+		t.Fatalf("Dir: %v", err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	// Restore write permission so t.TempDir()'s cleanup can remove it.
+	defer os.Chmod(dir, 0o700)
+
+	if err := Save(Default()); err == nil {
+		t.Fatal("Save() should error when the config directory isn't writable")
+	}
+}
