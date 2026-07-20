@@ -9,6 +9,10 @@ A WhatsApp client for your terminal, built in Go on top of [whatsmeow](https://g
 > **Docs:** browse this repo's docs as a site at
 > [codebyoketch.github.io/wa-cli](https://codebyoketch.github.io/wa-cli/)
 > (enable it once via repo `Settings → Pages → Source: GitHub Actions`).
+> Generated API docs are at
+> [pkg.go.dev/github.com/codebyoketch/wa-cli](https://pkg.go.dev/github.com/codebyoketch/wa-cli)
+> once the module's public and pushed — pkg.go.dev builds these itself
+> from source, no local `godoc` needed.
 
 ## Why
 

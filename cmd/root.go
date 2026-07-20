@@ -1,3 +1,17 @@
+// Package cmd implements wa-cli's Cobra command tree: one file per
+// command or command group (chat.go, contact.go, group.go, media.go,
+// config.go, extension.go, completion.go, login.go, logout.go,
+// status.go, send.go/reply.go/forward.go, watch.go, version.go), each
+// self-registering onto rootCmd from its own init(). root.go builds the
+// shared *app.App once at package init time, before any command's RunE
+// runs, so every command can assume a.Config/a.Log are ready.
+//
+// Everything here calls into internal/whatsapp for actual WhatsApp
+// operations; this package's own logic is argument parsing, output
+// formatting (see json.go), and the shared send-side checks in
+// send_shared.go (recipient resolution, rate limiting, the
+// confirm-new-recipient prompt). See ARCHITECTURE.md for the full
+// package map.
 package cmd
 
 import (

@@ -167,6 +167,9 @@ func newModel(ctx context.Context, client *whatsapp.Client, cs *chatstore.Store,
 	}
 }
 
+// Init satisfies tea.Model: it kicks off the initial local-cache loads
+// (chats, contacts, groups) as async tea.Cmds so the first frame renders
+// immediately rather than blocking on disk/network reads.
 func (m model) Init() tea.Cmd {
 	return tea.Batch(loadChatsCmd(m.cs), loadContactsCmd(m.ctx, m.client), loadGroupsCmd(m.ctx, m.client))
 }
@@ -248,6 +251,9 @@ func sendCmd(ctx context.Context, client *whatsapp.Client, guard *safety.Guard, 
 	}
 }
 
+// Update satisfies tea.Model: it's the single dispatch point for every
+// event the TUI reacts to (key presses, window resizes, and the async
+// results of the tea.Cmds started from Init or from a previous Update).
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -432,6 +438,9 @@ func (m *model) layout() {
 	}
 }
 
+// View satisfies tea.Model: it renders the current frame (sidebar,
+// message viewport, and input box) from m's state — pure and
+// side-effect-free, as Bubble Tea requires.
 func (m model) View() string {
 	if m.quitting {
 		return ""

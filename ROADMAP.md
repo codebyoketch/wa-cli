@@ -163,7 +163,7 @@ detailed history.
       wa-cli's own logic). `internal/cli` (0%) is the pre-Cobra hand-rolled
       router noted as dead code in `ARCHITECTURE.md` — candidate for
       deletion rather than tests.
-- [ ] **Phase 16 — Documentation**: site, examples, API docs, architecture
+- [x] **Phase 16 — Documentation**: site, examples, API docs, architecture
       diagrams. `README.md` rewritten to match actual capabilities
       (was still describing Phase 0/1 status), `ARCHITECTURE.md` added
       (package map, how `cmd`/`internal/app`/`internal/whatsapp` and the
@@ -181,12 +181,27 @@ detailed history.
       existing markdown directly with no build step and renders the
       Mermaid diagrams client-side (`docsify-mermaid`); deployed via
       `.github/workflows/docs.yml` (GitHub Pages, `actions/deploy-pages`,
-      triggers on any markdown/site-file change to `main`). Still open:
-      generated API docs (godoc/pkg.go.dev-style — package doc comments
-      are mostly there, but nothing's been generated or checked to
-      render cleanly). Needs `Settings → Pages → Source: GitHub Actions`
-      enabled once on the repo before the workflow's deploys will
-      actually publish.
+      triggers on any markdown/site-file change to `main`). Needs
+      `Settings → Pages → Source: GitHub Actions` enabled once on the
+      repo before the workflow's deploys will actually publish.
+      Doc-comment audit done for pkg.go.dev/godoc: a script checked
+      every exported top-level `func`/`type`/`var`/`const` and every
+      exported method across `cmd`/`internal/*`/`main.go` for a
+      preceding `//` comment — found and fixed the two real gaps
+      (`internal/whatsapp` had no package doc comment and its central
+      `Client` type had none either; `cmd` had no package doc comment
+      at all across its 20+ files, added to `root.go` since it owns
+      `rootCmd`), plus three missing method comments in
+      `internal/whatsapp/client.go` (`IsLoggedIn`, `Logout`,
+      `Disconnect`) and three in `internal/tui`
+      (`Init`/`Update`/`View`, the `tea.Model` interface methods).
+      Re-ran the audit after: zero gaps remain. Nothing generated
+      locally — no Go toolchain matching `go.mod`'s 1.25.0 requirement
+      is available in this environment (apt only offers 1.22) — but
+      pkg.go.dev builds its docs itself from the module proxy once a
+      tagged/pushed commit is public, so the comment audit is the
+      actual deliverable here, not a local build. Once pushed, docs
+      will be at `pkg.go.dev/github.com/codebyoketch/wa-cli`.
 - [ ] **Phase 17 — Releases**: GitHub Releases, Homebrew, Scoop, AUR,
       Docker image, `go install`, prebuilt binaries.
 - [ ] **Phase 18 — v1.0**: stable, cross-platform, documented, tested.

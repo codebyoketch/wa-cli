@@ -1,3 +1,13 @@
+// Package whatsapp wraps go.mau.fi/whatsmeow with a smaller,
+// wa-cli-shaped API (Client.ListChats, SendImage, GroupInfo, and so on)
+// rather than leaking whatsmeow's types everywhere. This is the one
+// package that talks to WhatsApp's servers; everything under cmd/ goes
+// through it rather than importing whatsmeow directly.
+//
+// Client wires together three separate local stores (see
+// internal/store, internal/chatstore, internal/msgstore) plus optional
+// desktop notifications (internal/notify) — see ARCHITECTURE.md for how
+// they fit together and why they're kept separate.
 package whatsapp
 
 import (
@@ -24,6 +34,10 @@ import (
 	"github.com/codebyoketch/wa-cli/internal/safety"
 )
 
+// Client is wa-cli's WhatsApp client: a thin, higher-level wrapper
+// around a *whatsmeow.Client (exported as WA) plus the local
+// chatstore/msgstore state and notification settings needed to serve
+// wa-cli's commands and TUI. Construct one with New.
 type Client struct {
 	WA         *whatsmeow.Client
 	log        waLog.Logger
@@ -333,6 +347,8 @@ func (c *Client) SyncChats(ctx context.Context, timeout time.Duration) error {
 	return nil
 }
 
+// IsLoggedIn reports whether the underlying device store already has a
+// persisted session, without opening a network connection.
 func (c *Client) IsLoggedIn() bool {
 	return c.WA.Store.ID != nil
 }
@@ -676,6 +692,9 @@ func (c *Client) printIncoming(evt *events.Message, guard *safety.Guard) {
 	}
 }
 
+// Logout terminates the linked-device session on WhatsApp's servers and
+// clears the local session, so a subsequent command needs `wa login`
+// again. Returns waerrors.ErrNotLoggedIn if no session is active.
 func (c *Client) Logout(ctx context.Context) error {
 	if !c.IsLoggedIn() {
 		return waerrors.ErrNotLoggedIn
@@ -689,6 +708,9 @@ func (c *Client) Logout(ctx context.Context) error {
 	return nil
 }
 
+// Disconnect closes the current WhatsApp connection without invalidating
+// the underlying session, so a later command can reconnect and resume
+// using the same persisted device store.
 func (c *Client) Disconnect() {
 	c.WA.Disconnect()
 }
