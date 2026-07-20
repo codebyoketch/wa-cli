@@ -28,6 +28,12 @@ type Chat struct {
 	LastMessageAt      int64  `json:"lastMessageAt"` // unix millis, 0 if unknown
 	LastMessagePreview string `json:"lastMessagePreview"`
 	UnreadCount        int    `json:"unreadCount"`
+	// Muted suppresses desktop notifications for this chat. Deliberately
+	// not part of Upsert's normal merge logic — only SetMuted changes
+	// it, so ordinary message ingestion never accidentally un-mutes a
+	// chat (a plain bool has no way to distinguish "explicitly wants
+	// false" from "caller didn't consider this field at all").
+	Muted bool `json:"muted,omitempty"`
 }
 
 // Store is a JSON-file-backed collection of Chats, keyed by JID.
@@ -68,6 +74,8 @@ func (s *Store) Upsert(c Chat) error {
 		if c.UnreadCount == 0 {
 			c.UnreadCount = existing.UnreadCount
 		}
+		// Muted is managed exclusively via SetMuted, never via Upsert.
+		c.Muted = existing.Muted
 	}
 
 	chats[c.JID] = c
@@ -141,6 +149,24 @@ func (s *Store) IncrementUnread(jid string) error {
 	c := chats[jid]
 	c.JID = jid
 	c.UnreadCount++
+	chats[jid] = c
+	return s.save(chats)
+}
+
+// SetMuted sets jid's muted flag, creating a bare record if it doesn't
+// exist yet (a subsequent Upsert fills in name/preview). This is the
+// only way Muted ever changes — see the field comment on Chat.
+func (s *Store) SetMuted(jid string, muted bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	chats, err := s.load()
+	if err != nil {
+		return err
+	}
+	c := chats[jid]
+	c.JID = jid
+	c.Muted = muted
 	chats[jid] = c
 	return s.save(chats)
 }

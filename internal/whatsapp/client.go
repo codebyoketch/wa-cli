@@ -19,6 +19,7 @@ import (
 	"github.com/codebyoketch/wa-cli/internal/chatstore"
 	waerrors "github.com/codebyoketch/wa-cli/internal/errors"
 	"github.com/codebyoketch/wa-cli/internal/msgstore"
+	"github.com/codebyoketch/wa-cli/internal/notify"
 	"github.com/codebyoketch/wa-cli/internal/qr"
 	"github.com/codebyoketch/wa-cli/internal/safety"
 )
@@ -29,6 +30,15 @@ type Client struct {
 	chats      *chatstore.Store
 	msgs       *msgstore.Store
 	onIncoming func(msgstore.Message)
+
+	// Desktop notifications are opt-in (default off) — only wa watch
+	// and the TUI call SetNotifications to enable them. Without this,
+	// any brief background sync that also passes chats/msgs to New()
+	// (e.g. `wa chat list`, `wa chat send`) would start popping
+	// notifications too, which isn't what those commands are for.
+	notifyEnabled     bool
+	notifyGroups      bool
+	notifyShowPreview bool
 }
 
 // New builds a Client using the first (or a fresh, unpaired) device from
@@ -57,6 +67,16 @@ func New(ctx context.Context, container *sqlstore.Container, log waLog.Logger, c
 // call replaces the first.
 func (c *Client) OnIncomingMessage(fn func(msgstore.Message)) {
 	c.onIncoming = fn
+}
+
+// SetNotifications turns on desktop notifications for incoming messages.
+// Off by default — see the Client struct's notify* field comments for
+// why this needs to be explicit rather than inferred from chats/msgs
+// being present.
+func (c *Client) SetNotifications(enabled, groups, showPreview bool) {
+	c.notifyEnabled = enabled
+	c.notifyGroups = groups
+	c.notifyShowPreview = showPreview
 }
 
 func (c *Client) handleEvent(evt interface{}) {
@@ -210,6 +230,35 @@ func (c *Client) ingestMessage(evt *events.Message) {
 			c.log.Warnf("msgstore append failed for %s: %v", jid, err)
 		} else if c.onIncoming != nil {
 			c.onIncoming(stored)
+		}
+	}
+
+	if !evt.Info.IsFromMe && c.notifyEnabled {
+		shouldNotify := c.notifyGroups || !evt.Info.IsGroup
+		if shouldNotify && c.chats != nil {
+			if chat, ok, err := c.chats.Get(jid); err == nil && ok && chat.Muted {
+				shouldNotify = false
+			}
+		}
+		if shouldNotify {
+			title := evt.Info.PushName
+			if title == "" {
+				title = jid
+			}
+			body := "New message"
+			if c.notifyShowPreview {
+				switch {
+				case mediaType != "" && text != "":
+					body = fmt.Sprintf("[%s] %s", mediaType, text)
+				case mediaType != "":
+					body = fmt.Sprintf("[%s]", mediaType)
+				case text != "":
+					body = text
+				}
+			}
+			if err := notify.Send(title, body); err != nil {
+				c.log.Warnf("desktop notification failed: %v", err)
+			}
 		}
 	}
 }

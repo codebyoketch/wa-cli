@@ -48,6 +48,7 @@ rather than racing a short sync window each time.`,
 		if !client.IsLoggedIn() {
 			return fmt.Errorf("not logged in: run 'wa login' first")
 		}
+		client.SetNotifications(a.Config.NotifyEnabled, a.Config.NotifyGroups, a.Config.NotifyShowPreview)
 
 		return client.Watch(ctx, guard)
 	},

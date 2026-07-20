@@ -34,6 +34,19 @@ type Config struct {
 	// ConfirmNewRecipients requires explicit confirmation before the first
 	// send to a recipient wa-cli hasn't messaged before.
 	ConfirmNewRecipients bool `json:"confirmNewRecipients"`
+
+	// NotifyEnabled turns desktop notifications on/off for wa watch and
+	// the TUI. NotifyGroups additionally gates group chats specifically
+	// (on by default, but many people find group notifications noisy).
+	// Per-chat muting is separate — see chatstore.Chat.Muted /
+	// `wa chat mute`.
+	NotifyEnabled bool `json:"notifyEnabled"`
+	NotifyGroups  bool `json:"notifyGroups"`
+	// NotifyShowPreview includes the message text in the notification
+	// body. Disable for privacy on a shared/visible screen — the
+	// notification will still show who messaged you, just not what
+	// they said.
+	NotifyShowPreview bool `json:"notifyShowPreview"`
 }
 
 // Default returns sane defaults for a fresh install.
@@ -50,6 +63,9 @@ func Default() Config {
 		MaxMessagesPerHour:   100,
 		MaxMessagesPerDay:    500,
 		ConfirmNewRecipients: true,
+		NotifyEnabled:        true,
+		NotifyGroups:         true,
+		NotifyShowPreview:    true,
 	}
 }
 

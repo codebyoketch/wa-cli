@@ -30,6 +30,9 @@ var configGetCmd = &cobra.Command{
 		fmt.Fprintf(out, "maxMessagesPerHour:   %d\n", a.Config.MaxMessagesPerHour)
 		fmt.Fprintf(out, "maxMessagesPerDay:    %d\n", a.Config.MaxMessagesPerDay)
 		fmt.Fprintf(out, "confirmNewRecipients: %t\n", a.Config.ConfirmNewRecipients)
+		fmt.Fprintf(out, "notifyEnabled:        %t\n", a.Config.NotifyEnabled)
+		fmt.Fprintf(out, "notifyGroups:         %t\n", a.Config.NotifyGroups)
+		fmt.Fprintf(out, "notifyShowPreview:    %t\n", a.Config.NotifyShowPreview)
 		return nil
 	},
 }

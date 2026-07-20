@@ -141,6 +141,54 @@ func TestUpsert_PreservesUnreadCount(t *testing.T) {
 	}
 }
 
+func TestSetMuted(t *testing.T) {
+	s := New(t.TempDir())
+	jid := "a@s.whatsapp.net"
+
+	if err := s.SetMuted(jid, true); err != nil {
+		t.Fatalf("SetMuted: %v", err)
+	}
+	got, _, err := s.Get(jid)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !got.Muted {
+		t.Fatal("expected Muted true")
+	}
+
+	if err := s.SetMuted(jid, false); err != nil {
+		t.Fatalf("SetMuted: %v", err)
+	}
+	got, _, _ = s.Get(jid)
+	if got.Muted {
+		t.Fatal("expected Muted false after unmute")
+	}
+}
+
+func TestUpsert_PreservesMuted(t *testing.T) {
+	s := New(t.TempDir())
+	jid := "a@s.whatsapp.net"
+
+	if err := s.SetMuted(jid, true); err != nil {
+		t.Fatalf("SetMuted: %v", err)
+	}
+
+	// Simulate ordinary message ingestion, which never sets Muted in its
+	// Chat literal (so it's always the zero value, false) — this must
+	// NOT silently unmute the chat.
+	if err := s.Upsert(Chat{JID: jid, Name: "Alice", LastMessageAt: 100}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	got, _, err := s.Get(jid)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !got.Muted {
+		t.Fatal("expected Muted to remain true after an unrelated Upsert")
+	}
+}
+
 func TestMarkRead(t *testing.T) {
 	s := New(t.TempDir())
 	jid := "a@s.whatsapp.net"

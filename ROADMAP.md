@@ -44,12 +44,18 @@ detailed history.
       sent via wa-cli silently undownloadable.
       Video/audio/document/sticker send not yet tested.
       documents, stickers.
-- [ ] **Phase 9 — Terminal UI**: `wa` (no subcommand) opens a split-pane
+- [x] **Phase 9 — Terminal UI**: `wa` (no subcommand) opens a split-pane
       chat UI (sidebar + messages + input), internal/tui, built on
-      Bubble Tea/Lip Gloss/Bubbles. New deps, unverified against a real
-      account — not yet tested at all (build or runtime).
-- [ ] **Phase 10 — Notifications**: desktop + terminal notifications,
-      unread badge.
+      Bubble Tea/Lip Gloss/Bubbles. Verified working against a real
+      account — including fixes for stdout log corruption, chat-name
+      flip-flop, missing group names, and WhatsApp-style message
+      alignment/sender names.
+- [ ] **Phase 10 — Notifications**: desktop notifications via
+      internal/notify (beeep), opt-in per-caller (wa watch + TUI only —
+      not other commands that briefly touch the same code path). Global
+      notifyEnabled/notifyGroups/notifyShowPreview config, per-chat mute
+      via `wa chat mute/unmute`. Not yet tested against a real account
+      or verified that notify-send/beeep actually works on this system.
 - [ ] **Phase 11 — Configuration**: `wa config set/get/edit`.
 - [ ] **Phase 12 — Plugins**: `wa extension install/list/remove`.
 - [ ] **Phase 13 — Shell Completion**: bash, zsh, fish, PowerShell.

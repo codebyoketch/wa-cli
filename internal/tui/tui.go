@@ -74,6 +74,7 @@ func Run(a *app.App) error {
 	if !client.IsLoggedIn() {
 		return fmt.Errorf("not logged in: run 'wa login' first")
 	}
+	client.SetNotifications(a.Config.NotifyEnabled, a.Config.NotifyGroups, a.Config.NotifyShowPreview)
 
 	m := newModel(ctx, client, cs, ms, guard)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithOutput(realStdout))

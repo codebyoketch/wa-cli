@@ -132,8 +132,47 @@ var chatOpenCmd = &cobra.Command{
 	},
 }
 
+var chatMuteCmd = &cobra.Command{
+	Use:   "mute <chat>",
+	Short: "Suppress desktop notifications for one chat",
+	Long: `Suppress desktop notifications for one chat, in wa watch and the TUI.
+Unrelated to unread counts or wa chat list — a muted chat still shows up
+normally, it just won't pop a desktop notification.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		chat, err := resolveChat(args[0])
+		if err != nil {
+			return err
+		}
+		cs := chatstore.New(a.Config.DataDir)
+		if err := cs.SetMuted(chat.JID, true); err != nil {
+			return err
+		}
+		fmt.Printf("Muted %s.\n", chat.JID)
+		return nil
+	},
+}
+
+var chatUnmuteCmd = &cobra.Command{
+	Use:   "unmute <chat>",
+	Short: "Re-enable desktop notifications for one chat",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		chat, err := resolveChat(args[0])
+		if err != nil {
+			return err
+		}
+		cs := chatstore.New(a.Config.DataDir)
+		if err := cs.SetMuted(chat.JID, false); err != nil {
+			return err
+		}
+		fmt.Printf("Unmuted %s.\n", chat.JID)
+		return nil
+	},
+}
+
 func init() {
-	chatCmd.AddCommand(chatListCmd, chatSearchCmd, chatInfoCmd, chatOpenCmd)
+	chatCmd.AddCommand(chatListCmd, chatSearchCmd, chatInfoCmd, chatOpenCmd, chatMuteCmd, chatUnmuteCmd)
 	rootCmd.AddCommand(chatCmd)
 }
 
