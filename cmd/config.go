@@ -130,6 +130,21 @@ func findConfigField(name string) (configField, bool) {
 	return configField{}, false
 }
 
+// completeConfigKeys returns config key names matching the toComplete
+// prefix, for use in ValidArgsFunction on 'wa config get'/'set'. Reads
+// only the in-memory configFields table — no disk or network access —
+// so it's safe on every Tab press.
+func completeConfigKeys(toComplete string) []string {
+	q := strings.ToLower(toComplete)
+	var names []string
+	for _, f := range configFields {
+		if strings.HasPrefix(strings.ToLower(f.name), q) {
+			names = append(names, f.name)
+		}
+	}
+	return names
+}
+
 var configGetCmd = &cobra.Command{
 	Use:   "get [key]",
 	Short: "Print the current configuration, or a single key",
@@ -138,6 +153,12 @@ var configGetCmd = &cobra.Command{
 With no arguments, prints every key. With one argument, prints just that
 key's value (handy for scripting, e.g. 'wa config get dataDir').`,
 	Args: cobra.MaximumNArgs(1),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return completeConfigKeys(toComplete), cobra.ShellCompDirectiveNoFileComp
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out := cmd.OutOrStdout()
 
@@ -145,6 +166,12 @@ key's value (handy for scripting, e.g. 'wa config get dataDir').`,
 			f, ok := findConfigField(args[0])
 			if !ok {
 				return fmt.Errorf("unknown config key %q (see 'wa config get' for the full list)", args[0])
+			}
+			if useJSON(cmd) {
+				return printJSON(cmd, struct {
+					Key   string `json:"key"`
+					Value string `json:"value"`
+				}{f.name, f.get(a.Config)})
 			}
 			fmt.Fprintln(out, f.get(a.Config))
 			return nil
@@ -154,6 +181,18 @@ key's value (handy for scripting, e.g. 'wa config get dataDir').`,
 		if err != nil {
 			return err
 		}
+
+		if useJSON(cmd) {
+			values := make(map[string]string, len(configFields))
+			for _, f := range configFields {
+				values[f.name] = f.get(a.Config)
+			}
+			return printJSON(cmd, struct {
+				ConfigFile string            `json:"configFile"`
+				Values     map[string]string `json:"values"`
+			}{path, values})
+		}
+
 		fmt.Fprintf(out, "config file: %s\n\n", path)
 
 		width := 0
@@ -182,6 +221,12 @@ Examples:
   wa config set logLevel debug
   wa config set maxMessagesPerHour 200`,
 	Args: cobra.ExactArgs(2),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return completeConfigKeys(toComplete), cobra.ShellCompDirectiveNoFileComp
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key, val := args[0], args[1]
 

@@ -14,6 +14,12 @@ var chatSendCmd = &cobra.Command{
 	Long: `Send a plain text message. <recipient> can be a chat name (as shown
 in 'wa chat list') or a literal WhatsApp JID.`,
 	Args: cobra.MinimumNArgs(2),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return completeChatNames(toComplete), cobra.ShellCompDirectiveNoFileComp
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		target := args[0]

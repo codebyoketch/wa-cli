@@ -21,6 +21,32 @@ import (
 	"github.com/codebyoketch/wa-cli/internal/whatsapp"
 )
 
+// completeChatNames returns chat names from the local chatstore cache
+// matching the toComplete prefix, for use in ValidArgsFunction across
+// every command that takes a chat name/JID as an argument. Reads the
+// local JSON index only — never opens a WhatsApp connection — so it's
+// safe to call on every Tab press without competing with 'wa watch' for
+// WhatsApp's single-connection-per-device slot.
+func completeChatNames(toComplete string) []string {
+	cs := chatstore.New(a.Config.DataDir)
+	chats, err := cs.List()
+	if err != nil {
+		return nil
+	}
+
+	q := strings.ToLower(toComplete)
+	var names []string
+	for _, c := range chats {
+		if c.Name == "" {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(c.Name), q) {
+			names = append(names, c.Name)
+		}
+	}
+	return names
+}
+
 // resolveJID accepts a literal WhatsApp JID (containing "@"), a chat
 // name/partial name (resolved via chatstore, same lookup 'wa chat open'
 // uses), or a bare phone number (with or without a leading "+"), which

@@ -88,18 +88,24 @@ detailed history.
       working. Toolchain is no longer pinned to 1.22 — this environment
       now runs go1.25.0, matching go.mod.
 - [x] **Phase 13 — Shell Completion**: `cmd/completion.go`, `wa completion
-      bash/zsh/fish/powershell`. Static command-tree completion verified
-      working end-to-end (built binary, sourced into bash, confirmed
-      `wa <TAB>` and nested subcommand lists render correctly with
-      descriptions). Dynamic completion described in `completion.go`'s
-      own doc comment — chat names for `wa chat send/reply/forward`,
-      contact names for `wa contact info`, config keys for `wa config
-      get/set`, extension names for `wa extension run/remove` — is not
-      yet implemented; no `ValidArgsFunction` exists anywhere in the
-      source, so those commands currently fall back to default file
-      completion. `wa group`/`wa media` intentionally use file-completion
-      fallback per the one-active-connection constraint (see Known
-      issues) — not a gap, by design.
+      bash/zsh/fish/powershell`. Static command-tree completion and
+      dynamic completion both verified working end-to-end against a real
+      account. `ValidArgsFunction` added across every command named in
+      `completion.go`'s doc comment: chat names for `wa chat
+      send/reply/forward/info/open/mute/unmute` (via a shared
+      `completeChatNames` helper reading chatstore's local JSON index),
+      contact names for `wa contact info` (falls back to `PushName` when
+      `Name` is empty), config keys for `wa config get/set` (via
+      `completeConfigKeys`, reading the in-memory `configFields` table),
+      and installed extension names for `wa extension run/remove` (via
+      `completeExtensionNames`, reading the local extensions directory).
+      None of these open a WhatsApp connection, so they're safe to
+      trigger on every Tab press without competing with `wa watch` for
+      the single-connection slot. `wa chat forward` completes chat names
+      at both the from-chat and to-recipient positions, skipping the
+      message-ref position in between. `wa group`/`wa media` still fall
+      back to file completion, which remains correct by design (see
+      Known issues).
 - [x] **Phase 14 — JSON Output**: persistent `--json` flag (`cmd/json.go`)
       wired into every list/read command: `wa chat list/search/info/open`,
       `wa contact list/search/info`, `wa group list/info`, `wa media
@@ -184,13 +190,14 @@ detailed history.
   running will disconnect `watch` — this isn't fixable client-side, it's
   how the protocol works. Use `wa chat list --no-sync` to read the local
   cache without opening a competing connection while `watch` is active.
-- **Tab completion only covers the static command tree, not individual
-  items.** `wa chat send`, `wa contact info`, `wa config get/set`, and
-  `wa extension run/remove` fall back to default shell (file) completion
-  instead of suggesting real chat names, contact names, config keys, or
-  extension names — no `ValidArgsFunction` has been implemented for any
-  of them yet, despite `cmd/completion.go`'s doc comment describing this
-  as the intended behavior. Scoped to Phase 13.
+- **`wa group`/`wa media` don't have dynamic Tab completion.** These fall
+  back to default shell (file) completion by design, not oversight —
+  both need a live WhatsApp connection to resolve their arguments (group
+  JIDs, media message references), and WhatsApp only allows one active
+  connection per device. Triggering a connection attempt on every Tab
+  press would risk disconnecting `wa watch` if it's running. Every other
+  command with local, cache-backed arguments (chat, contact, config,
+  extension) has real dynamic completion as of Phase 13.
 - **Connection stability depends heavily on your network.** Testing
   surfaced frequent `Error sending close to websocket` resets on an
   Airtel 5G home connection, most likely due to CGNAT (carrier-grade

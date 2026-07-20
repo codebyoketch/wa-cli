@@ -18,6 +18,15 @@ number shown in 'wa chat open <from-chat>', or a raw WhatsApp message ID.
 Only plain text messages can be forwarded in this pass — media forwarding
 isn't supported yet.`,
 	Args: cobra.ExactArgs(3),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Position 0 (from-chat) and position 2 (to-recipient) are both
+		// chat names; position 1 (message-ref) is a number or message ID,
+		// which chatstore can't help complete.
+		if len(args) == 0 || len(args) == 2 {
+			return completeChatNames(toComplete), cobra.ShellCompDirectiveNoFileComp
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 		fromTarget := args[0]
