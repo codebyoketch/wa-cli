@@ -44,6 +44,26 @@ func newMediaSendCmd(kind string) *cobra.Command {
 				return err
 			}
 
+			if kind == "audio" && voice {
+				if !looksLikeOgg(data) {
+					return fmt.Errorf(
+						"--voice requires an OGG/Opus file — WhatsApp voice notes need the exact mimetype "+
+							`"audio/ogg; codecs=opus", and %s doesn't look like an Ogg container. `+
+							"Convert it first, e.g.: ffmpeg -i %s -c:a libopus -b:a 32k voice.ogg", path, path)
+				}
+				// WhatsApp requires this exact string for a PTT bubble to
+				// render/play correctly. Neither extension-based mimetype
+				// lookup (bare "audio/ogg") nor content-sniffing
+				// ("application/ogg") produce it, so it's forced here
+				// rather than trusted from readMediaFile.
+				mimetype = "audio/ogg; codecs=opus"
+			}
+			if kind == "sticker" && mimetype != "image/webp" {
+				return fmt.Errorf(
+					"stickers must be WebP images (got %q for %s) — WhatsApp rejects other formats for stickers; "+
+						"convert first, e.g.: ffmpeg -i %s -vf scale=512:512 sticker.webp", mimetype, path, path)
+			}
+
 			jid, err := resolveJID(target)
 			if err != nil {
 				return err
@@ -219,6 +239,15 @@ func readMediaFile(path string) ([]byte, string, error) {
 		mimetype = http.DetectContentType(data)
 	}
 	return data, mimetype, nil
+}
+
+// looksLikeOgg reports whether data starts with the Ogg container magic
+// bytes ("OggS"). This doesn't confirm the stream is Opus-encoded
+// specifically (Ogg can carry Vorbis, FLAC, etc.), but it catches the
+// common mistake of pointing --voice at an mp3/wav/m4a file, which
+// WhatsApp will accept upload-wise but then fail to play as a voice note.
+func looksLikeOgg(data []byte) bool {
+	return len(data) >= 4 && string(data[:4]) == "OggS"
 }
 
 // defaultDownloadPath derives a filename from the message ID and a
