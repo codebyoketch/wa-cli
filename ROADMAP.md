@@ -37,12 +37,17 @@ detailed history.
       genuine third-party participant (a self-only participant list
       correctly gets rejected by WhatsApp's server, not a bug).
 - [ ] **Phase 8 — Media**: send/download/list images, video, audio,
-      documents, stickers. Compiles clean against the pinned whatsmeow
-      version — not yet tested against a real account (no send/download
-      confirmed working at runtime).
+      documents, stickers. `wa media send image` and `wa media download`
+      both verified against a real account. Found and fixed a real bug
+      in the process: sendMedia was recording a fake text-only
+      placeholder instead of the actual sent message, making anything
+      sent via wa-cli silently undownloadable.
+      Video/audio/document/sticker send not yet tested.
       documents, stickers.
-- [ ] **Phase 9 — Terminal UI**: Bubble Tea / Lip Gloss / Bubbles full-screen
-      chat UI.
+- [ ] **Phase 9 — Terminal UI**: `wa` (no subcommand) opens a split-pane
+      chat UI (sidebar + messages + input), internal/tui, built on
+      Bubble Tea/Lip Gloss/Bubbles. New deps, unverified against a real
+      account — not yet tested at all (build or runtime).
 - [ ] **Phase 10 — Notifications**: desktop + terminal notifications,
       unread badge.
 - [ ] **Phase 11 — Configuration**: `wa config set/get/edit`.

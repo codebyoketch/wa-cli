@@ -24,10 +24,11 @@ import (
 )
 
 type Client struct {
-	WA    *whatsmeow.Client
-	log   waLog.Logger
-	chats *chatstore.Store
-	msgs  *msgstore.Store
+	WA         *whatsmeow.Client
+	log        waLog.Logger
+	chats      *chatstore.Store
+	msgs       *msgstore.Store
+	onIncoming func(msgstore.Message)
 }
 
 // New builds a Client using the first (or a fresh, unpaired) device from
@@ -47,6 +48,15 @@ func New(ctx context.Context, container *sqlstore.Container, log waLog.Logger, c
 	}
 
 	return c, nil
+}
+
+// OnIncomingMessage registers fn to be called for every incoming message,
+// after it's been ingested into chatstore/msgstore. Lets callers with
+// their own event loop (like the TUI) bridge live updates in without
+// duplicating ingestion logic. Only one callback is supported; a second
+// call replaces the first.
+func (c *Client) OnIncomingMessage(fn func(msgstore.Message)) {
+	c.onIncoming = fn
 }
 
 func (c *Client) handleEvent(evt interface{}) {
@@ -174,7 +184,7 @@ func (c *Client) ingestMessage(evt *events.Message) {
 			}
 		}
 
-		err := c.msgs.Append(msgstore.Message{
+		stored := msgstore.Message{
 			ID:        evt.Info.ID,
 			ChatJID:   jid,
 			SenderJID: sender,
@@ -183,9 +193,12 @@ func (c *Client) ingestMessage(evt *events.Message) {
 			FromMe:    evt.Info.IsFromMe,
 			MediaType: mediaType,
 			RawProto:  raw,
-		})
-		if err != nil {
+		}
+
+		if err := c.msgs.Append(stored); err != nil {
 			c.log.Warnf("msgstore append failed for %s: %v", jid, err)
+		} else if c.onIncoming != nil {
+			c.onIncoming(stored)
 		}
 	}
 }

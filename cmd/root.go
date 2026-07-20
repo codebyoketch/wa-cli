@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/codebyoketch/wa-cli/internal/app"
+	"github.com/codebyoketch/wa-cli/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -14,7 +15,12 @@ var rootCmd = &cobra.Command{
 	Use:   "wa",
 	Short: "wa is a WhatsApp client for your terminal",
 	Long: `wa-cli lets you send and receive WhatsApp messages, manage chats,
-contacts, and groups, all without leaving your terminal.`,
+contacts, and groups, all without leaving your terminal.
+
+Running 'wa' with no subcommand opens a full-screen chat interface.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return tui.Run(a)
+	},
 }
 
 func init() {
