@@ -126,7 +126,20 @@ detailed history.
 - [ ] **Phase 15 — Testing**: unit + integration tests, mock WhatsApp
       service, CI coverage (target 80%+ on core packages).
 - [ ] **Phase 16 — Documentation**: site, examples, API docs, architecture
-      diagrams.
+      diagrams. `README.md` rewritten to match actual capabilities
+      (was still describing Phase 0/1 status), `ARCHITECTURE.md` added
+      (package map, how `cmd`/`internal/app`/`internal/whatsapp` and the
+      three local stores fit together, notes `internal/cli` as unused
+      dead code), `docs/EXAMPLES.md` added (six worked examples:
+      scripting with `--json`, a daily unread-chats digest, piping `wa
+      watch`, sending from a script without hitting the
+      confirm-new-recipient prompt, exporting chat history, writing a
+      minimal extension). Still open: an actual hosted/generated docs
+      site (what exists is markdown in the repo, not a site), generated
+      API docs (godoc/pkg.go.dev-style — package doc comments are
+      mostly there, but nothing's been generated or checked to render
+      cleanly), and real architecture diagrams (ARCHITECTURE.md has an
+      ASCII tree, not a diagram, e.g. Mermaid or an image).
 - [ ] **Phase 17 — Releases**: GitHub Releases, Homebrew, Scoop, AUR,
       Docker image, `go install`, prebuilt binaries.
 - [ ] **Phase 18 — v1.0**: stable, cross-platform, documented, tested.
