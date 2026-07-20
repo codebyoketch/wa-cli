@@ -32,6 +32,10 @@ var (
 	theirMsgStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("252"))
 
+	senderNameStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("212"))
+
 	timestampStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240"))
 

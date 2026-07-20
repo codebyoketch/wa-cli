@@ -153,13 +153,24 @@ func (c *Client) ingestMessage(evt *events.Message) {
 	}
 
 	if c.chats != nil {
-		err := c.chats.Upsert(chatstore.Chat{
+		update := chatstore.Chat{
 			JID:                jid,
-			Name:               evt.Info.PushName,
 			IsGroup:            evt.Info.IsGroup,
 			LastMessageAt:      evt.Info.Timestamp.UnixMilli(),
 			LastMessagePreview: preview,
-		})
+		}
+		// PushName is whoever actually sent this specific message —
+		// correct as the chat's name for a 1:1 chat, but only when it's
+		// the *other* person's message. Your own outgoing messages also
+		// fire this event with PushName set to your own profile name,
+		// which would otherwise flip the stored chat name back and
+		// forth between yours and theirs depending on who sent last.
+		// Also wrong for groups (would overwrite the group's real name
+		// with whichever member happened to send most recently).
+		if !evt.Info.IsGroup && !evt.Info.IsFromMe {
+			update.Name = evt.Info.PushName
+		}
+		err := c.chats.Upsert(update)
 		if err != nil {
 			c.log.Warnf("chatstore upsert failed for %s: %v", jid, err)
 		}

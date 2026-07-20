@@ -108,6 +108,16 @@ type model struct {
 	chats       []chatstore.Chat
 	selectedJID string // "" means none selected yet
 
+	// senderNames maps a JID to its best-known display name (from local
+	// contacts), used to show a real name instead of a generic "them"
+	// label — mainly matters in groups, where messages come from
+	// several different people.
+	senderNames map[string]string
+	// groupNames maps a group JID to its real name, fetched via
+	// ListGroups since chatstore's own name field for groups only ever
+	// comes from HistorySync, which isn't reliable.
+	groupNames map[string]string
+
 	messages []msgstore.Message
 
 	viewport viewport.Model
@@ -123,6 +133,8 @@ type model struct {
 // --- tea.Msg types for async results ---
 
 type chatsLoadedMsg struct{ chats []chatstore.Chat }
+type contactsLoadedMsg struct{ names map[string]string }
+type groupsLoadedMsg struct{ names map[string]string }
 type messagesLoadedMsg struct {
 	chatJID string
 	msgs    []msgstore.Message
@@ -140,20 +152,62 @@ func newModel(ctx context.Context, client *whatsapp.Client, cs *chatstore.Store,
 	vp := viewport.New(0, 0)
 
 	return model{
-		ctx:        ctx,
-		client:     client,
-		cs:         cs,
-		ms:         ms,
-		guard:      guard,
-		input:      ti,
-		viewport:   vp,
-		focus:      focusChatList,
-		statusLine: "Connecting...",
+		ctx:         ctx,
+		client:      client,
+		cs:          cs,
+		ms:          ms,
+		guard:       guard,
+		input:       ti,
+		viewport:    vp,
+		focus:       focusChatList,
+		statusLine:  "Connecting...",
+		senderNames: map[string]string{},
+		groupNames:  map[string]string{},
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return loadChatsCmd(m.cs)
+	return tea.Batch(loadChatsCmd(m.cs), loadContactsCmd(m.ctx, m.client), loadGroupsCmd(m.ctx, m.client))
+}
+
+// loadContactsCmd reads local contacts (no network needed — see Phase 6)
+// to build a JID -> display name lookup, used mainly in groups where
+// messages come from several different senders.
+func loadContactsCmd(ctx context.Context, client *whatsapp.Client) tea.Cmd {
+	return func() tea.Msg {
+		contacts, err := client.ListContacts(ctx)
+		if err != nil {
+			return errMsg{err}
+		}
+		names := make(map[string]string, len(contacts))
+		for _, c := range contacts {
+			if c.Name != "" {
+				names[c.JID] = c.Name
+			}
+		}
+		return contactsLoadedMsg{names}
+	}
+}
+
+// loadGroupsCmd fetches real group names via the account's joined-groups
+// list (internal/whatsapp.ListGroups, Phase 7). chatstore only ever gets
+// a group's name from HistorySync, which has proven unreliable — this
+// gives the TUI an authoritative fallback so groups aren't stuck showing
+// a blank/JID-only name in the sidebar.
+func loadGroupsCmd(ctx context.Context, client *whatsapp.Client) tea.Cmd {
+	return func() tea.Msg {
+		groups, err := client.ListGroups(ctx)
+		if err != nil {
+			return errMsg{err}
+		}
+		names := make(map[string]string, len(groups))
+		for _, g := range groups {
+			if g.Name != "" {
+				names[g.JID] = g.Name
+			}
+		}
+		return groupsLoadedMsg{names}
+	}
 }
 
 func loadChatsCmd(cs *chatstore.Store) tea.Cmd {
@@ -214,6 +268,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if (wasEmpty || len(m.messages) == 0) && m.selectedJID != "" {
 			return m, loadMessagesCmd(m.cs, m.ms, m.selectedJID)
 		}
+		return m, nil
+
+	case contactsLoadedMsg:
+		m.senderNames = msg.names
+		if len(m.messages) > 0 {
+			m.viewport.SetContent(m.renderMessages())
+		}
+		return m, nil
+
+	case groupsLoadedMsg:
+		m.groupNames = msg.names
 		return m, nil
 
 	case messagesLoadedMsg:
@@ -402,6 +467,9 @@ func (m model) renderChatList() string {
 
 	for _, c := range m.chats {
 		name := c.Name
+		if name == "" && c.IsGroup {
+			name = m.groupNames[c.JID]
+		}
 		if name == "" {
 			name = c.JID
 		}
@@ -436,15 +504,13 @@ func (m model) renderMessages() string {
 		return "No local history for this chat yet."
 	}
 
+	width := m.viewport.Width
+	if width <= 0 {
+		width = 40
+	}
+
 	var b strings.Builder
 	for _, msg := range m.messages {
-		who := "them"
-		style := theirMsgStyle
-		if msg.FromMe {
-			who = "you"
-			style = myMsgStyle
-		}
-
 		text := msg.Text
 		switch {
 		case msg.MediaType != "" && text != "":
@@ -454,9 +520,49 @@ func (m model) renderMessages() string {
 		}
 
 		ts := timestampStyle.Render(time.UnixMilli(msg.Timestamp).Local().Format("15:04"))
-		b.WriteString(fmt.Sprintf("%s %s: %s\n", ts, style.Render(who), text))
+
+		var line string
+		var align lipgloss.Position
+		if msg.FromMe {
+			line = fmt.Sprintf("%s %s", myMsgStyle.Render(text), ts)
+			align = lipgloss.Right
+		} else {
+			name := senderNameStyle.Render(m.senderDisplayName(msg))
+			line = fmt.Sprintf("%s %s: %s", ts, name, theirMsgStyle.Render(text))
+			align = lipgloss.Left
+		}
+
+		b.WriteString(lipgloss.NewStyle().Width(width).Align(align).Render(line) + "\n")
 	}
 	return b.String()
+}
+
+// senderDisplayName resolves a message's sender to a real name instead
+// of a generic "them" label. For a 1:1 chat, the chat's own name IS the
+// sender's name. For a group (multiple possible senders), it falls back
+// to the local contacts lookup, then the sender JID's phone number.
+func (m model) senderDisplayName(msg msgstore.Message) string {
+	if chat, ok := m.currentChat(); ok {
+		if !chat.IsGroup && chat.Name != "" {
+			return chat.Name
+		}
+	}
+	if name, ok := m.senderNames[msg.SenderJID]; ok && name != "" {
+		return name
+	}
+	if at := strings.Index(msg.SenderJID, "@"); at > 0 {
+		return msg.SenderJID[:at]
+	}
+	return "Unknown"
+}
+
+func (m model) currentChat() (chatstore.Chat, bool) {
+	for _, c := range m.chats {
+		if c.JID == m.selectedJID {
+			return c, true
+		}
+	}
+	return chatstore.Chat{}, false
 }
 
 func (m model) renderInputBar() string {
