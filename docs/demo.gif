@@ -1,0 +1,52 @@
+# Demo recording script for https://github.com/charmbracelet/vhs
+#
+# I can't generate the actual GIF from this sandbox â€” it needs a real
+# wa binary talking to a real, already-logged-in WhatsApp session,
+# which only exists on your machine. Run this yourself:
+#
+#   1. Install vhs: https://github.com/charmbracelet/vhs#installation
+#      (needs ttyd + ffmpeg too, vhs's README covers both)
+#   2. Make sure `wa` is on your PATH and already logged in
+#      (`wa status` should say "Logged in as ...")
+#   3. From the repo root:  vhs docs/demo.tape
+#   4. Check docs/demo.gif before committing â€” this will show whatever
+#      chats/contacts are in your real account. Edit the Type commands
+#      below first, or use a test account, if you don't want real
+#      names/numbers visible in a public GIF.
+
+Output docs/demo.gif
+
+Set Shell "bash"
+Set FontSize 16
+Set Width 1200
+Set Height 700
+Set Theme "Dracula"
+Set Padding 20
+Set TypingSpeed 60ms
+
+Type "wa status"
+Enter
+Sleep 1.5s
+
+Type "wa chat list"
+Enter
+Sleep 2s
+
+Type "wa contact list --json | jq '.[0:3]'"
+Enter
+Sleep 2s
+
+# Full-screen TUI
+Type "wa"
+Enter
+Sleep 2s
+Down
+Sleep 500ms
+Down
+Sleep 500ms
+Enter
+Sleep 2s
+Escape
+Sleep 1s
+Type "q"
+Sleep 1s
