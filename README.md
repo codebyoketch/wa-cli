@@ -24,8 +24,9 @@ manage chats/contacts/groups/media, all from the command line — with
 ## Install
 
 **Prebuilt binaries** (Linux/macOS/Windows, amd64/arm64) are on the
-[Releases page](https://github.com/codebyoketch/wa-cli/releases) once
-the first tag is cut.
+[Releases page](https://github.com/codebyoketch/wa-cli/releases).
+Download the archive for your platform, extract it, and put the `wa`
+binary somewhere on your `PATH`.
 
 ```sh
 # Homebrew (macOS/Linux)
@@ -38,6 +39,16 @@ scoop install wa-cli
 # Docker
 docker run -it -v wa-data:/data ghcr.io/codebyoketch/wa-cli:latest login
 ```
+
+> **Homebrew on Linux:** if you don't already have `brew`, it isn't
+> preinstalled — get it from [brew.sh](https://brew.sh) first
+> (`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`).
+> The installer prints a "Next steps" section with a `PATH` line you
+> need to run before `brew` works in your current shell — usually
+> `eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv bash)"`, added
+> to `~/.bashrc` (or your shell's equivalent) so it persists across
+> terminals. It also asks for `build-essential` and `bubblewrap` via
+> `apt`, needed to install some formulae on Linux.
 
 Or with Go 1.25+ installed:
 
