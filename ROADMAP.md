@@ -246,25 +246,66 @@ detailed history.
       the config file and SQLite session store together so `wa login`
       persists across container restarts.
 
-      Not yet exercised end to end — no tag has been pushed, so the
-      actual release/publish path (as opposed to `goreleaser check`
-      and the corrections above) hasn't run. Two things need one-time
-      manual setup before a real release will fully succeed: create
-      the `codebyoketch/homebrew-tap` and `codebyoketch/scoop-bucket`
-      repos, and add `HOMEBREW_TAP_GITHUB_TOKEN` /
-      `SCOOP_BUCKET_GITHUB_TOKEN` secrets (a PAT with repo scope, since
-      the default `GITHUB_TOKEN` can't push to a different repo) under
-      this repo's *Settings → Secrets and variables → Actions*. Until
-      both exist, cut the first release with
-      `git tag v0.1.0 && git push --tags`; if the Homebrew/Scoop steps
-      fail, check `goreleaser release --help` for the current `--skip`
-      value for that pipe (it changed along with the brews →
-      homebrew_casks rename) — the binaries/GitHub Release/Docker
-      images don't depend on either succeeding. AUR isn't in
-      `.goreleaser.yaml` at all — it needs an AUR account, an SSH key
-      registered with AUR, and PKGBUILD maintainer details GoReleaser
-      can't infer, so it's left for later as a manual follow-up rather
-      than guessed at.
+      **`v0.1.0` tagged, pushed, and verified live** (checked directly
+      against the GitHub API, not just inferred from the workflow
+      succeeding): `github.com/codebyoketch/wa-cli/releases/tag/v0.1.0`
+      has real binaries for all 5 platform/arch combinations
+      (darwin/linux amd64+arm64, windows amd64) plus `checksums.txt`,
+      published by `github-actions[bot]`. `go install
+      github.com/codebyoketch/wa-cli@latest` and the GitHub Release
+      binaries both work today.
+
+      Homebrew and Scoop did **not** publish, confirmed via the GitHub
+      API (`api.github.com/repos/codebyoketch/homebrew-tap` and
+      `.../scoop-bucket` both 404) — exactly the failure mode predicted
+      below, since neither repo nor its secret was ever created. `brew
+      install`/`scoop install` won't work until that one-time setup
+      happens; the GitHub Release binaries are unaffected and are the
+      recommended install path until then. Docker/ghcr push status is
+      unverified (the anonymous GitHub API can't read package
+      visibility without a token) — check
+      `https://github.com/codebyoketch/wa-cli/pkgs/container/wa-cli`
+      directly, or `docker pull ghcr.io/codebyoketch/wa-cli:v0.1.0`.
+      AUR remains an explicit non-goal for now (see below).
+
+      Original pre-release notes, left for context on what was
+      verified beforehand via `goreleaser check`: two things the
+      initial `.goreleaser.yaml` draft got wrong, caught by actually
+      running the check rather than only reasoning about the schema:
+      (1) `brews:` is fully deprecated as of GoReleaser v2.16
+      (soft-deprecated since v2.10) — migrated to `homebrew_casks:`,
+      which also means GoReleaser installs the binary automatically
+      instead of needing a manual `bin.install` Ruby block. (2)
+      `dockers:`/`docker_manifests:` are being phased out for
+      `dockers_v2:`, which — importantly — does NOT run `go build`
+      inside the Dockerfile the way the old pattern (and this
+      project's first-draft multi-stage Dockerfile) did; it reuses the
+      binary GoReleaser already built for the release archives and the
+      Dockerfile just `COPY`s it in from `${TARGETPLATFORM}/wa`.
+      Rewrote `Dockerfile` accordingly (single-stage, Alpine runtime,
+      no Go toolchain in the image build at all now) — one real
+      consequence documented in the file itself: plain `docker build .`
+      with nothing else run first will fail, since there's no
+      `linux/<arch>/wa` in a bare git checkout for `COPY` to find;
+      testing locally needs the whole pipeline (`goreleaser release
+      --snapshot --skip=publish --clean`), not just `docker build`.
+      `XDG_CONFIG_HOME=/data` as a single volume still applies — keeps
+      the config file and SQLite session store together so `wa login`
+      persists across container restarts.
+
+      Remaining before this phase can be checked off: create the
+      `codebyoketch/homebrew-tap` and `codebyoketch/scoop-bucket`
+      repos, add `HOMEBREW_TAP_GITHUB_TOKEN` / `SCOOP_BUCKET_GITHUB_TOKEN`
+      secrets (a PAT with repo scope, since the default `GITHUB_TOKEN`
+      can't push to a different repo) under this repo's *Settings →
+      Secrets and variables → Actions*, then re-run GoReleaser against
+      the existing `v0.1.0` tag (`goreleaser release --clean` locally,
+      or delete and re-push the tag to re-trigger the workflow) so
+      those two steps actually run against a tag that previously
+      succeeded everywhere else. AUR isn't in `.goreleaser.yaml` at
+      all — it needs an AUR account, an SSH key registered with AUR,
+      and PKGBUILD maintainer details GoReleaser can't infer, so it's
+      left for later as a manual follow-up rather than guessed at.
 - [ ] **Phase 18 — v1.0**: stable, cross-platform, documented, tested.
 
 ## Future (v2.0 ideas)
