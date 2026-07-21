@@ -63,7 +63,7 @@ func New(ctx context.Context, container *sqlstore.Container, log waLog.Logger, c
 	if err != nil {
 		return nil, waerrors.Wrap(err, "loading device store")
 	}
-	clientLog := waLog.Stdout("Client", "WARN", true)
+	clientLog := newQuietLogger(waLog.Stdout("Client", "WARN", true))
 	waClient := whatsmeow.NewClient(device, clientLog)
 	c := &Client{WA: waClient, log: log, chats: chats, msgs: msgs}
 

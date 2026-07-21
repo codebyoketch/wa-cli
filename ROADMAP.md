@@ -267,7 +267,33 @@ detailed history.
   multi-device WebSocket. `wa watch`'s reconnect-with-backoff exists
   specifically to cope with this; one-shot commands (`chat list`,
   `login`) are more exposed to it, since they only get a short window
-  before giving up.
+  before giving up. Note this is distinct from the log-noise issue
+  below — a genuine mid-connection drop still surfaces, this note is
+  about resilience to it, not about hiding it.
+- **`Error sending close to websocket: failed to close WebSocket:
+  failed to read frame header: EOF` used to print on almost every
+  command, even successful ones — fixed.** It fires from whatsmeow's
+  own graceful-close code path specifically, i.e. when *we* call
+  `WA.Disconnect()` (which every one-shot command's `defer
+  client.Disconnect()` does immediately after finishing) and the
+  server has already torn down its end of the socket first — the send
+  or receive that already happened is unaffected either way, this was
+  purely a log line about the close handshake afterward, not an actual
+  problem. Since nearly every wa-cli command connects, does one thing,
+  and disconnects right away, it was printing on nearly every
+  invocation. `internal/whatsapp/quietlogger.go` wraps the Client
+  logger to filter out only this one specific message (matched against
+  the fully-interpolated string, not the raw format string) — verified
+  distinct from the CGNAT-reset note above by where in whatsmeow's code
+  each originates: this one only fires from the deliberate-close path,
+  not from the read-loop's unexpected-disconnect handling that
+  `reconnectWithBackoff` reacts to, so `wa watch`'s actual reconnect
+  diagnostics during a real CGNAT drop should be unaffected. Not
+  verified against a real flaky connection, though (this fix was built
+  and unit-tested — `quietlogger_test.go` — but not confirmed against
+  the Airtel 5G scenario the CGNAT note describes); if `wa watch`
+  logging ever turns out too quiet during a real reconnect, that's the
+  file to revisit.
 
 ## Notes on current implementation
 
