@@ -36,14 +36,14 @@ detailed history.
       Verified against a real account — create confirmed working with a
       genuine third-party participant (a self-only participant list
       correctly gets rejected by WhatsApp's server, not a bug).
-- [ ] **Phase 8 — Media**: send/download/list images, video, audio,
+- [x] **Phase 8 — Media**: send/download/list images, video, audio,
       documents, stickers. `wa media send image` and `wa media download`
       both verified against a real account. Found and fixed a real bug
       in the process: sendMedia was recording a fake text-only
       placeholder instead of the actual sent message, making anything
       sent via wa-cli silently undownloadable.
-      Video/audio/document/sticker send not yet tested.
-      documents, stickers.
+      Video, audio (regular and `--voice`/PTT), document, and sticker
+      send all verified against a real account and confirmed delivered.
 - [x] **Phase 9 — Terminal UI**: `wa` (no subcommand) opens a split-pane
       chat UI (sidebar + messages + input), internal/tui, built on
       Bubble Tea/Lip Gloss/Bubbles. Verified working against a real
