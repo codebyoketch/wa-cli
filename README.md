@@ -1,5 +1,21 @@
 # wa-cli
 
+```
+█     █    █           █████  █       ███ 
+█  █  █   █ █         █     █ █        █  
+█  █  █  █   █        █       █        █  
+█  █  █ █     █ █████ █       █        █  
+█  █  █ ███████       █       █        █  
+█  █  █ █     █       █     █ █        █  
+ ██ ██  █     █        █████  ███████ ███ 
+```
+
+[![CI](https://github.com/codebyoketch/wa-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/codebyoketch/wa-cli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/codebyoketch/wa-cli)](https://github.com/codebyoketch/wa-cli/releases)
+[![Go Reference](https://pkg.go.dev/badge/github.com/codebyoketch/wa-cli.svg)](https://pkg.go.dev/github.com/codebyoketch/wa-cli)
+[![Go Report Card](https://goreportcard.com/badge/github.com/codebyoketch/wa-cli)](https://goreportcard.com/report/github.com/codebyoketch/wa-cli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 A WhatsApp client for your terminal, built in Go on top of [whatsmeow](https://github.com/tulir/whatsmeow).
 
 > **Status:** v1.0.0 — stable and cross-platform, with a couple of
@@ -11,6 +27,14 @@ A WhatsApp client for your terminal, built in Go on top of [whatsmeow](https://g
 > [codebyoketch.github.io/wa-cli](https://codebyoketch.github.io/wa-cli/),
 > or generated API docs at
 > [pkg.go.dev/github.com/codebyoketch/wa-cli](https://pkg.go.dev/github.com/codebyoketch/wa-cli).
+
+## Demo
+
+```sh
+vhs docs/demo.tape   # generates docs/demo.gif — see the tape file for setup
+```
+
+![wa-cli demo](./docs/demo.gif)
 
 ## Why
 
