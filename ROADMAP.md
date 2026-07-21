@@ -216,34 +216,55 @@ detailed history.
       linux/darwin/windows × amd64/arm64, CGO_ENABLED=0 throughout —
       `modernc.org/sqlite` is pure Go so no per-target C toolchain is
       needed; GitHub Release with checksums and an auto-generated
-      changelog; Homebrew tap formula; Scoop bucket manifest; multi-arch
-      Docker images to ghcr.io via buildx/QEMU), `Dockerfile`
-      (multi-stage, Alpine runtime, `XDG_CONFIG_HOME=/data` as a single
-      volume so the config file and SQLite session store both persist
-      across container restarts — otherwise `wa login` would need
-      redoing every time), `.dockerignore`, and
-      `.github/workflows/release.yml` (runs GoReleaser on `v*` tag
-      push). README's Install section updated with Homebrew/Scoop/
-      Docker instructions alongside the existing `go install`/build-
-      from-source ones.
+      changelog; Homebrew tap cask; Scoop bucket manifest; multi-arch
+      Docker images to ghcr.io via buildx/QEMU), `Dockerfile`,
+      `.dockerignore`, and `.github/workflows/release.yml` (runs
+      GoReleaser on `v*` tag push). README's Install section updated
+      with Homebrew/Scoop/Docker instructions alongside the existing
+      `go install`/build-from-source ones.
 
-      Not yet exercised end to end — no tag has been pushed, so none
-      of this has actually run. Two things need one-time manual setup
-      before a real release will fully succeed: create the
-      `codebyoketch/homebrew-tap` and `codebyoketch/scoop-bucket`
+      First real check surfaced two things the initial draft got
+      wrong, caught by actually running `goreleaser check` rather than
+      only reasoning about the schema: (1) `brews:` is fully deprecated
+      as of GoReleaser v2.16 (soft-deprecated since v2.10) — migrated
+      to `homebrew_casks:`, which also means GoReleaser installs the
+      binary automatically instead of needing a manual `bin.install`
+      Ruby block. (2) `dockers:`/`docker_manifests:` are being phased
+      out for `dockers_v2:`, which — importantly — does NOT run `go
+      build` inside the Dockerfile the way the old pattern (and this
+      project's first-draft multi-stage Dockerfile) did; it reuses the
+      binary GoReleaser already built for the release archives and the
+      Dockerfile just `COPY`s it in from `${TARGETPLATFORM}/wa`.
+      Rewrote `Dockerfile` accordingly (single-stage, Alpine runtime,
+      no Go toolchain in the image build at all now) — one real
+      consequence documented in the file itself: plain `docker build .`
+      with nothing else run first will fail, since there's no
+      `linux/<arch>/wa` in a bare git checkout for `COPY` to find;
+      testing locally needs the whole pipeline (`goreleaser release
+      --snapshot --skip=publish --clean`), not just `docker build`.
+      `XDG_CONFIG_HOME=/data` as a single volume still applies — keeps
+      the config file and SQLite session store together so `wa login`
+      persists across container restarts.
+
+      Not yet exercised end to end — no tag has been pushed, so the
+      actual release/publish path (as opposed to `goreleaser check`
+      and the corrections above) hasn't run. Two things need one-time
+      manual setup before a real release will fully succeed: create
+      the `codebyoketch/homebrew-tap` and `codebyoketch/scoop-bucket`
       repos, and add `HOMEBREW_TAP_GITHUB_TOKEN` /
       `SCOOP_BUCKET_GITHUB_TOKEN` secrets (a PAT with repo scope, since
       the default `GITHUB_TOKEN` can't push to a different repo) under
       this repo's *Settings → Secrets and variables → Actions*. Until
       both exist, cut the first release with
-      `git tag v0.1.0 && git push --tags`, and if the Homebrew/Scoop
-      steps fail, either add the secrets/repos first or re-run with
-      `goreleaser release --clean --skip=homebrew,scoop` — the
-      binaries/GitHub Release/Docker images don't depend on either.
-      AUR isn't in `.goreleaser.yaml` at all — it needs an AUR account,
-      an SSH key registered with AUR, and PKGBUILD maintainer details
-      GoReleaser can't infer, so it's left for later as a manual
-      follow-up rather than guessed at.
+      `git tag v0.1.0 && git push --tags`; if the Homebrew/Scoop steps
+      fail, check `goreleaser release --help` for the current `--skip`
+      value for that pipe (it changed along with the brews →
+      homebrew_casks rename) — the binaries/GitHub Release/Docker
+      images don't depend on either succeeding. AUR isn't in
+      `.goreleaser.yaml` at all — it needs an AUR account, an SSH key
+      registered with AUR, and PKGBUILD maintainer details GoReleaser
+      can't infer, so it's left for later as a manual follow-up rather
+      than guessed at.
 - [ ] **Phase 18 — v1.0**: stable, cross-platform, documented, tested.
 
 ## Future (v2.0 ideas)

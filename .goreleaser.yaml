@@ -70,35 +70,34 @@ release:
   # the GitHub Release notes to GoReleaser's auto-generated commit list
   # rather than duplicating that prose here.
 
-# Homebrew tap: publishes a formula to codebyoketch/homebrew-tap so
+# Homebrew tap: publishes a cask to codebyoketch/homebrew-tap so
 # `brew install codebyoketch/tap/wa-cli` works. Needs that repo to
 # exist and a HOMEBREW_TAP_GITHUB_TOKEN secret (a PAT with repo scope
 # on it) in this repo's Actions secrets — the default GITHUB_TOKEN
 # can't push to a different repo. See ROADMAP.md Phase 17 for the
-# one-time setup steps; until both exist, run a release with
-# `goreleaser release --skip=homebrew` rather than letting this step
-# fail the whole release.
+# one-time setup steps; until both exist, run
+# `goreleaser release --help` to find the exact `--skip` value for
+# this pipe (it changed when brews -> homebrew_casks) and skip it,
+# rather than letting this step fail the whole release.
 #
-# Note: newer GoReleaser versions are shifting Homebrew publishing
-# toward a `homebrew_casks:` section (installs a prebuilt binary
-# rather than a from-source formula); `brews:` still works as of the
-# version pinned in release.yml but is being positioned as the older
-# path. Worth checking `goreleaser customization/publish/homebrew`
-# docs before the next major GoReleaser bump.
-brews:
+# homebrew_casks (not the older brews:, fully deprecated as of
+# GoReleaser v2.16 per `goreleaser check`) is Homebrew's own preferred
+# way to distribute a precompiled binary — unlike brews, it doesn't
+# need a manual `bin.install`/`test` Ruby block; GoReleaser installs
+# the binary from the archive automatically.
+homebrew_casks:
   - name: wa-cli
     repository:
       owner: codebyoketch
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: "https://github.com/codebyoketch/wa-cli"
     description: "A WhatsApp client for your terminal, built on whatsmeow"
     license: "MIT"
-    install: |
-      bin.install "wa"
-    test: |
-      system "#{bin}/wa", "--version"
+    commit_author:
+      name: Oketch Dishon
+      email: oketchdishon@gmail.com
 
 # Scoop bucket: same idea as the Homebrew tap, for Windows —
 # `scoop bucket add wa-cli https://github.com/codebyoketch/scoop-bucket`
@@ -117,34 +116,20 @@ scoops:
     description: "A WhatsApp client for your terminal, built on whatsmeow"
     license: MIT
 
-dockers:
-  - id: wa-cli-amd64
-    image_templates:
-      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-amd64"
-    dockerfile: Dockerfile
-    use: buildx
-    goarch: amd64
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.source=https://github.com/codebyoketch/wa-cli"
-      - "--label=org.opencontainers.image.licenses=MIT"
-  - id: wa-cli-arm64
-    image_templates:
-      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-arm64"
-    dockerfile: Dockerfile
-    use: buildx
-    goarch: arm64
-    build_flag_templates:
-      - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.source=https://github.com/codebyoketch/wa-cli"
-      - "--label=org.opencontainers.image.licenses=MIT"
-
-docker_manifests:
-  - name_template: "ghcr.io/codebyoketch/wa-cli:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-amd64"
-      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/codebyoketch/wa-cli:latest"
-    image_templates:
-      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-amd64"
-      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-arm64"
+# dockers_v2 (not the older split dockers:/docker_manifests:, being
+# phased out per `goreleaser check`) builds and pushes a multi-arch
+# manifest in one step via buildx — GoReleaser reuses the binaries it
+# already built above rather than rebuilding inside Docker.
+dockers_v2:
+  - images:
+      - "ghcr.io/codebyoketch/wa-cli"
+    tags:
+      - "{{ .Version }}"
+      - "latest"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      "org.opencontainers.image.source": "https://github.com/codebyoketch/wa-cli"
+      "org.opencontainers.image.licenses": "MIT"
+      "org.opencontainers.image.description": "A WhatsApp client for your terminal, built on whatsmeow"

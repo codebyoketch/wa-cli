@@ -1,39 +1,29 @@
 # syntax=docker/dockerfile:1
-
-# --- build stage -------------------------------------------------------
-FROM golang:1.25-alpine AS build
-WORKDIR /src
-
-# Cache dependency downloads separately from source changes.
-COPY go.mod go.sum ./
-RUN go mod download
-
-COPY . .
-
-# modernc.org/sqlite is pure Go — no cgo needed, so this builds cleanly
-# on Alpine without a C toolchain. VERSION/COMMIT/DATE are passed in as
-# build args by the release workflow (GoReleaser's docker builder sets
-# these); local `docker build` without them just gets "dev"/"none"/
-# "unknown", matching internal/version's own zero-value defaults.
-ARG VERSION=dev
-ARG COMMIT=none
-ARG DATE=unknown
-RUN CGO_ENABLED=0 go build \
-    -ldflags "-s -w \
-      -X github.com/codebyoketch/wa-cli/internal/version.Version=${VERSION} \
-      -X github.com/codebyoketch/wa-cli/internal/version.Commit=${COMMIT} \
-      -X github.com/codebyoketch/wa-cli/internal/version.BuildDate=${DATE}" \
-    -o /out/wa .
-
-# --- runtime stage -------------------------------------------------------
-FROM alpine:3.20
+#
+# This Dockerfile is built by GoReleaser's dockers_v2 pipe (see
+# .goreleaser.yaml), which builds the Go binary itself (once per
+# platform, in the builds section) and hands this file only a
+# pre-built binary to copy in — it does NOT run `go build` here.
+# That avoids compiling the binary twice (once for the release
+# archives, once for the Docker image) for what would otherwise be
+# the same output.
+#
+# One consequence: `docker build .` on its own, with nothing else run
+# first, will fail — there's no linux/<arch>/wa for COPY to find. To
+# build and test the image locally, run the whole pipeline instead
+# (which builds the binaries, populates this context correctly, and
+# builds the image, without publishing anywhere):
+#
+#   goreleaser release --snapshot --skip=publish --clean
+#
 # ca-certificates: whatsmeow talks TLS to WhatsApp's servers.
-# tzdata: message timestamps are rendered in local time (see
-# ARCHITECTURE.md / cmd output formatting) — without it the container
-# has no timezone database to resolve against.
+# tzdata: message timestamps render in local time (see cmd output
+# formatting) — without it the container has no timezone database.
+FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
 
-COPY --from=build /out/wa /usr/local/bin/wa
+ARG TARGETPLATFORM
+COPY ${TARGETPLATFORM}/wa /usr/local/bin/wa
 
 # wa-cli's own default config dir is $XDG_CONFIG_HOME/wa (see
 # internal/config.Dir); pointing XDG_CONFIG_HOME at a single volume
