@@ -87,6 +87,13 @@ release:
 # the binary from the archive automatically.
 homebrew_casks:
   - name: wa-cli
+    # The archive's actual executable is named "wa" (see builds.binary
+    # above), not "wa-cli" — without this, GoReleaser defaults the
+    # cask's expected binary name to match `name:` (wa-cli), which
+    # doesn't exist in the archive and breaks `brew install` with
+    # "It seems the symlink source ... is not there." Confirmed via a
+    # real `brew install codebyoketch/tap/wa-cli` run against v0.1.2.
+    binary: wa
     repository:
       owner: codebyoketch
       name: homebrew-tap
@@ -107,6 +114,15 @@ homebrew_casks:
 # dedicated one — either works, GitHub secrets aren't shared across
 # names automatically).
 scoops:
+  # NOTE: homebrew_casks above had this exact class of bug — GoReleaser
+  # defaulting the expected binary name to `name:` (wa-cli) instead of
+  # the archive's actual binary (wa) — confirmed via a real `brew
+  # install` failure against v0.1.2. Untested whether `scoops:` has the
+  # same default-inference behavior; nobody's run `scoop install
+  # wa-cli` yet to confirm one way or the other. If it fails the same
+  # way, GoReleaser's scoop field for this is `bin:` (not `binary:`,
+  # that's homebrew's field name) — check `goreleaser` docs for the
+  # exact key before guessing at YAML here blind again.
   - name: wa-cli
     repository:
       owner: codebyoketch
@@ -133,3 +149,4 @@ dockers_v2:
       "org.opencontainers.image.source": "https://github.com/codebyoketch/wa-cli"
       "org.opencontainers.image.licenses": "MIT"
       "org.opencontainers.image.description": "A WhatsApp client for your terminal, built on whatsmeow"
+      
