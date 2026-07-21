@@ -209,7 +209,41 @@ detailed history.
       actual deliverable here, not a local build. Once pushed, docs
       will be at `pkg.go.dev/github.com/codebyoketch/wa-cli`.
 - [ ] **Phase 17 — Releases**: GitHub Releases, Homebrew, Scoop, AUR,
-      Docker image, `go install`, prebuilt binaries.
+      Docker image, `go install`, prebuilt binaries. `go install
+      github.com/codebyoketch/wa-cli@latest` already works today — no
+      extra setup needed, since it's just a public Go module. Added
+      `.goreleaser.yaml` (cross-platform binaries for
+      linux/darwin/windows × amd64/arm64, CGO_ENABLED=0 throughout —
+      `modernc.org/sqlite` is pure Go so no per-target C toolchain is
+      needed; GitHub Release with checksums and an auto-generated
+      changelog; Homebrew tap formula; Scoop bucket manifest; multi-arch
+      Docker images to ghcr.io via buildx/QEMU), `Dockerfile`
+      (multi-stage, Alpine runtime, `XDG_CONFIG_HOME=/data` as a single
+      volume so the config file and SQLite session store both persist
+      across container restarts — otherwise `wa login` would need
+      redoing every time), `.dockerignore`, and
+      `.github/workflows/release.yml` (runs GoReleaser on `v*` tag
+      push). README's Install section updated with Homebrew/Scoop/
+      Docker instructions alongside the existing `go install`/build-
+      from-source ones.
+
+      Not yet exercised end to end — no tag has been pushed, so none
+      of this has actually run. Two things need one-time manual setup
+      before a real release will fully succeed: create the
+      `codebyoketch/homebrew-tap` and `codebyoketch/scoop-bucket`
+      repos, and add `HOMEBREW_TAP_GITHUB_TOKEN` /
+      `SCOOP_BUCKET_GITHUB_TOKEN` secrets (a PAT with repo scope, since
+      the default `GITHUB_TOKEN` can't push to a different repo) under
+      this repo's *Settings → Secrets and variables → Actions*. Until
+      both exist, cut the first release with
+      `git tag v0.1.0 && git push --tags`, and if the Homebrew/Scoop
+      steps fail, either add the secrets/repos first or re-run with
+      `goreleaser release --clean --skip=homebrew,scoop` — the
+      binaries/GitHub Release/Docker images don't depend on either.
+      AUR isn't in `.goreleaser.yaml` at all — it needs an AUR account,
+      an SSH key registered with AUR, and PKGBUILD maintainer details
+      GoReleaser can't infer, so it's left for later as a manual
+      follow-up rather than guessed at.
 - [ ] **Phase 18 — v1.0**: stable, cross-platform, documented, tested.
 
 ## Future (v2.0 ideas)

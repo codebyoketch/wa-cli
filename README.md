@@ -23,7 +23,23 @@ manage chats/contacts/groups/media, all from the command line — with
 
 ## Install
 
-Requires Go 1.25+.
+**Prebuilt binaries** (Linux/macOS/Windows, amd64/arm64) are on the
+[Releases page](https://github.com/codebyoketch/wa-cli/releases) once
+the first tag is cut.
+
+```sh
+# Homebrew (macOS/Linux)
+brew install codebyoketch/tap/wa-cli
+
+# Scoop (Windows)
+scoop bucket add wa-cli https://github.com/codebyoketch/scoop-bucket
+scoop install wa-cli
+
+# Docker
+docker run -it -v wa-data:/data ghcr.io/codebyoketch/wa-cli:latest login
+```
+
+Or with Go 1.25+ installed:
 
 ```sh
 go install github.com/codebyoketch/wa-cli@latest

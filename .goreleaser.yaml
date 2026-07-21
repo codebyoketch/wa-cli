@@ -1,0 +1,150 @@
+version: 2
+
+project_name: wa-cli
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: wa
+    main: .
+    binary: wa
+    env:
+      # modernc.org/sqlite is pure Go (no cgo), and nothing else wa-cli
+      # depends on needs cgo either — see ARCHITECTURE.md /
+      # go.mod. CGO_ENABLED=0 keeps cross-compilation simple: no
+      # per-target C toolchain needed for any GOOS/GOARCH combination
+      # below.
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # Windows on arm64 is a real but rare target; skipping it keeps
+      # the release matrix smaller until someone actually asks for it.
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/codebyoketch/wa-cli/internal/version.Version={{.Version}}
+      - -X github.com/codebyoketch/wa-cli/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/codebyoketch/wa-cli/internal/version.BuildDate={{.Date}}
+
+archives:
+  - id: default
+    ids: [wa]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+release:
+  github:
+    owner: codebyoketch
+    name: wa-cli
+  draft: false
+  prerelease: auto
+  # ROADMAP.md/CHANGELOG.md already carry the detailed history; keep
+  # the GitHub Release notes to GoReleaser's auto-generated commit list
+  # rather than duplicating that prose here.
+
+# Homebrew tap: publishes a formula to codebyoketch/homebrew-tap so
+# `brew install codebyoketch/tap/wa-cli` works. Needs that repo to
+# exist and a HOMEBREW_TAP_GITHUB_TOKEN secret (a PAT with repo scope
+# on it) in this repo's Actions secrets — the default GITHUB_TOKEN
+# can't push to a different repo. See ROADMAP.md Phase 17 for the
+# one-time setup steps; until both exist, run a release with
+# `goreleaser release --skip=homebrew` rather than letting this step
+# fail the whole release.
+#
+# Note: newer GoReleaser versions are shifting Homebrew publishing
+# toward a `homebrew_casks:` section (installs a prebuilt binary
+# rather than a from-source formula); `brews:` still works as of the
+# version pinned in release.yml but is being positioned as the older
+# path. Worth checking `goreleaser customization/publish/homebrew`
+# docs before the next major GoReleaser bump.
+brews:
+  - name: wa-cli
+    repository:
+      owner: codebyoketch
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/codebyoketch/wa-cli"
+    description: "A WhatsApp client for your terminal, built on whatsmeow"
+    license: "MIT"
+    install: |
+      bin.install "wa"
+    test: |
+      system "#{bin}/wa", "--version"
+
+# Scoop bucket: same idea as the Homebrew tap, for Windows —
+# `scoop bucket add wa-cli https://github.com/codebyoketch/scoop-bucket`
+# then `scoop install wa-cli`. Needs codebyoketch/scoop-bucket to exist
+# and the same PAT as SCOOP_BUCKET_GITHUB_TOKEN (can reuse the
+# Homebrew tap token's value under a second secret name, or a
+# dedicated one — either works, GitHub secrets aren't shared across
+# names automatically).
+scoops:
+  - name: wa-cli
+    repository:
+      owner: codebyoketch
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+    homepage: "https://github.com/codebyoketch/wa-cli"
+    description: "A WhatsApp client for your terminal, built on whatsmeow"
+    license: MIT
+
+dockers:
+  - id: wa-cli-amd64
+    image_templates:
+      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-amd64"
+    dockerfile: Dockerfile
+    use: buildx
+    goarch: amd64
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.source=https://github.com/codebyoketch/wa-cli"
+      - "--label=org.opencontainers.image.licenses=MIT"
+  - id: wa-cli-arm64
+    image_templates:
+      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-arm64"
+    dockerfile: Dockerfile
+    use: buildx
+    goarch: arm64
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.source=https://github.com/codebyoketch/wa-cli"
+      - "--label=org.opencontainers.image.licenses=MIT"
+
+docker_manifests:
+  - name_template: "ghcr.io/codebyoketch/wa-cli:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-amd64"
+      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/codebyoketch/wa-cli:latest"
+    image_templates:
+      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-amd64"
+      - "ghcr.io/codebyoketch/wa-cli:{{ .Version }}-arm64"
