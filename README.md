@@ -2,17 +2,15 @@
 
 A WhatsApp client for your terminal, built in Go on top of [whatsmeow](https://github.com/tulir/whatsmeow).
 
-> **Status:** actively developed, most core features working and verified
-> against a real account — see [ROADMAP.md](./ROADMAP.md) for exactly
-> what's done, what's in progress, and known issues.
+> **Status:** v1.0.0 — stable and cross-platform, with a couple of
+> documented known limitations rather than zero known bugs; see
+> [ROADMAP.md](./ROADMAP.md) for exactly what's done and what's known
+> to still need work.
 
 > **Docs:** browse this repo's docs as a site at
-> [codebyoketch.github.io/wa-cli](https://codebyoketch.github.io/wa-cli/)
-> (enable it once via repo `Settings → Pages → Source: GitHub Actions`).
-> Generated API docs are at
-> [pkg.go.dev/github.com/codebyoketch/wa-cli](https://pkg.go.dev/github.com/codebyoketch/wa-cli)
-> once the module's public and pushed — pkg.go.dev builds these itself
-> from source, no local `godoc` needed.
+> [codebyoketch.github.io/wa-cli](https://codebyoketch.github.io/wa-cli/),
+> or generated API docs at
+> [pkg.go.dev/github.com/codebyoketch/wa-cli](https://pkg.go.dev/github.com/codebyoketch/wa-cli).
 
 ## Why
 

@@ -208,105 +208,76 @@ detailed history.
       tagged/pushed commit is public, so the comment audit is the
       actual deliverable here, not a local build. Once pushed, docs
       will be at `pkg.go.dev/github.com/codebyoketch/wa-cli`.
-- [ ] **Phase 17 — Releases**: GitHub Releases, Homebrew, Scoop, AUR,
-      Docker image, `go install`, prebuilt binaries. `go install
-      github.com/codebyoketch/wa-cli@latest` already works today — no
-      extra setup needed, since it's just a public Go module. Added
-      `.goreleaser.yaml` (cross-platform binaries for
-      linux/darwin/windows × amd64/arm64, CGO_ENABLED=0 throughout —
-      `modernc.org/sqlite` is pure Go so no per-target C toolchain is
-      needed; GitHub Release with checksums and an auto-generated
-      changelog; Homebrew tap cask; Scoop bucket manifest; multi-arch
-      Docker images to ghcr.io via buildx/QEMU), `Dockerfile`,
-      `.dockerignore`, and `.github/workflows/release.yml` (runs
-      GoReleaser on `v*` tag push). README's Install section updated
-      with Homebrew/Scoop/Docker instructions alongside the existing
-      `go install`/build-from-source ones.
+- [x] **Phase 17 — Releases**: GitHub Releases, Homebrew, Scoop, Docker
+      image, `go install`, prebuilt binaries. AUR is the one deliberate
+      exception — see below.
 
-      First real check surfaced two things the initial draft got
-      wrong, caught by actually running `goreleaser check` rather than
-      only reasoning about the schema: (1) `brews:` is fully deprecated
-      as of GoReleaser v2.16 (soft-deprecated since v2.10) — migrated
-      to `homebrew_casks:`, which also means GoReleaser installs the
-      binary automatically instead of needing a manual `bin.install`
-      Ruby block. (2) `dockers:`/`docker_manifests:` are being phased
-      out for `dockers_v2:`, which — importantly — does NOT run `go
-      build` inside the Dockerfile the way the old pattern (and this
-      project's first-draft multi-stage Dockerfile) did; it reuses the
-      binary GoReleaser already built for the release archives and the
-      Dockerfile just `COPY`s it in from `${TARGETPLATFORM}/wa`.
-      Rewrote `Dockerfile` accordingly (single-stage, Alpine runtime,
-      no Go toolchain in the image build at all now) — one real
-      consequence documented in the file itself: plain `docker build .`
-      with nothing else run first will fail, since there's no
-      `linux/<arch>/wa` in a bare git checkout for `COPY` to find;
-      testing locally needs the whole pipeline (`goreleaser release
-      --snapshot --skip=publish --clean`), not just `docker build`.
-      `XDG_CONFIG_HOME=/data` as a single volume still applies — keeps
-      the config file and SQLite session store together so `wa login`
-      persists across container restarts.
+      `.goreleaser.yaml` builds cross-platform binaries
+      (linux/darwin/windows × amd64/arm64, `CGO_ENABLED=0` throughout —
+      `modernc.org/sqlite` is pure Go, no per-target C toolchain
+      needed), publishes a GitHub Release with checksums and an
+      auto-generated changelog, a Homebrew cask, a Scoop manifest, and
+      multi-arch Docker images to `ghcr.io`. `.github/workflows/release.yml`
+      runs it on `v*` tag push. Two schema migrations along the way,
+      caught by actually running `goreleaser check` rather than only
+      reasoning about it: `brews:` → `homebrew_casks:` (fully deprecated
+      as of GoReleaser v2.16), and `dockers:`/`docker_manifests:` →
+      `dockers_v2:` (reuses the binary already built for the release
+      archives instead of running `go build` inside the Dockerfile —
+      `Dockerfile` is single-stage Alpine, no Go toolchain in the image
+      build; `docker build .` alone won't work without the archives
+      already in place, needs the full `goreleaser release --snapshot
+      --skip=publish --clean` pipeline for local testing).
 
-      **`v0.1.0` tagged, pushed, and verified live** (checked directly
-      against the GitHub API, not just inferred from the workflow
-      succeeding): `github.com/codebyoketch/wa-cli/releases/tag/v0.1.0`
-      has real binaries for all 5 platform/arch combinations
-      (darwin/linux amd64+arm64, windows amd64) plus `checksums.txt`,
-      published by `github-actions[bot]`. `go install
-      github.com/codebyoketch/wa-cli@latest` and the GitHub Release
-      binaries both work today.
+      **Every distribution channel verified for real, not just assumed
+      from a green workflow:**
+      - `v0.1.0`–`v0.1.3` all tagged and published, with real binaries
+        for all 5 platform/arch combinations plus `checksums.txt`,
+        confirmed directly against the GitHub API.
+      - `go install github.com/codebyoketch/wa-cli@latest` — works.
+      - **Homebrew**: `brew install codebyoketch/tap/wa-cli` — confirmed
+        working end to end (`wa version` prints correctly) as of
+        `v0.1.3`, after fixing a real bug found via an actual install
+        attempt against `v0.1.2`: `homebrew_casks:` defaults its
+        expected binary name to match the cask's `name:` (`wa-cli`)
+        when `binary:` isn't set explicitly, but the archive's real
+        executable is `wa` (see `builds.binary` in `.goreleaser.yaml`)
+        — failed with `It seems the symlink source .../wa-cli is not
+        there.` until `binary: wa` was added explicitly.
+      - **Scoop**: manifest content verified correct
+        (`codebyoketch/scoop-bucket/wa-cli.json` has `"bin":
+        ["wa.exe"]`, matching the real archive) — GoReleaser's Scoop
+        integration infers the binary name correctly on its own,
+        unlike Homebrew's. Not run end-to-end on an actual Windows
+        machine (neither of us has one on hand), but the artifact
+        itself checks out.
+      - **Docker**: confirmed end to end —
+        `docker run -it -v wa-data:/data ghcr.io/codebyoketch/wa-cli:latest
+        login` pulls `ghcr.io/codebyoketch/wa-cli:latest` cleanly and
+        renders a real QR code for `wa login`.
 
-      Homebrew and Scoop did **not** publish, confirmed via the GitHub
-      API (`api.github.com/repos/codebyoketch/homebrew-tap` and
-      `.../scoop-bucket` both 404) — exactly the failure mode predicted
-      below, since neither repo nor its secret was ever created. `brew
-      install`/`scoop install` won't work until that one-time setup
-      happens; the GitHub Release binaries are unaffected and are the
-      recommended install path until then. Docker/ghcr push status is
-      unverified (the anonymous GitHub API can't read package
-      visibility without a token) — check
-      `https://github.com/codebyoketch/wa-cli/pkgs/container/wa-cli`
-      directly, or `docker pull ghcr.io/codebyoketch/wa-cli:v0.1.0`.
-      AUR remains an explicit non-goal for now (see below).
-
-      Original pre-release notes, left for context on what was
-      verified beforehand via `goreleaser check`: two things the
-      initial `.goreleaser.yaml` draft got wrong, caught by actually
-      running the check rather than only reasoning about the schema:
-      (1) `brews:` is fully deprecated as of GoReleaser v2.16
-      (soft-deprecated since v2.10) — migrated to `homebrew_casks:`,
-      which also means GoReleaser installs the binary automatically
-      instead of needing a manual `bin.install` Ruby block. (2)
-      `dockers:`/`docker_manifests:` are being phased out for
-      `dockers_v2:`, which — importantly — does NOT run `go build`
-      inside the Dockerfile the way the old pattern (and this
-      project's first-draft multi-stage Dockerfile) did; it reuses the
-      binary GoReleaser already built for the release archives and the
-      Dockerfile just `COPY`s it in from `${TARGETPLATFORM}/wa`.
-      Rewrote `Dockerfile` accordingly (single-stage, Alpine runtime,
-      no Go toolchain in the image build at all now) — one real
-      consequence documented in the file itself: plain `docker build .`
-      with nothing else run first will fail, since there's no
-      `linux/<arch>/wa` in a bare git checkout for `COPY` to find;
-      testing locally needs the whole pipeline (`goreleaser release
-      --snapshot --skip=publish --clean`), not just `docker build`.
-      `XDG_CONFIG_HOME=/data` as a single volume still applies — keeps
-      the config file and SQLite session store together so `wa login`
-      persists across container restarts.
-
-      Remaining before this phase can be checked off: create the
-      `codebyoketch/homebrew-tap` and `codebyoketch/scoop-bucket`
-      repos, add `HOMEBREW_TAP_GITHUB_TOKEN` / `SCOOP_BUCKET_GITHUB_TOKEN`
-      secrets (a PAT with repo scope, since the default `GITHUB_TOKEN`
-      can't push to a different repo) under this repo's *Settings →
-      Secrets and variables → Actions*, then re-run GoReleaser against
-      the existing `v0.1.0` tag (`goreleaser release --clean` locally,
-      or delete and re-push the tag to re-trigger the workflow) so
-      those two steps actually run against a tag that previously
-      succeeded everywhere else. AUR isn't in `.goreleaser.yaml` at
-      all — it needs an AUR account, an SSH key registered with AUR,
-      and PKGBUILD maintainer details GoReleaser can't infer, so it's
-      left for later as a manual follow-up rather than guessed at.
-- [ ] **Phase 18 — v1.0**: stable, cross-platform, documented, tested.
+      AUR isn't in `.goreleaser.yaml` at all — it needs a personal AUR
+      account, an SSH key registered with AUR, and PKGBUILD maintainer
+      details GoReleaser can't infer. Left as a deliberate non-goal
+      rather than guessed at; revisit only if there's real demand for
+      it.
+- [x] **Phase 18 — v1.0**: stable, cross-platform, documented, tested.
+      Tagged as `v1.0.0` with known issues documented rather than
+      blocking on them — consistent with how the phrase is being used
+      here, not a claim of zero bugs: **documented** (Phase 16) and
+      **tested** (Phase 15, scoped deliberately — unit tests for pure
+      logic, manual verification for the whatsmeow-facing network
+      layer) are both genuinely done. **Cross-platform** binaries build
+      correctly for Linux/macOS/Windows × amd64/arm64 via GoReleaser,
+      but only Linux has actually been run end-to-end by a human so
+      far (Phase 17) — macOS/Windows are verified-to-build, not
+      verified-to-run. **Stable** carries one known open bug (`wa chat
+      list --json` sometimes showing an empty `name` for a chat that
+      has one — see Known issues below, not yet root-caused) alongside
+      a few documented-by-design limitations (single WhatsApp
+      connection at a time, `HistorySync`'s one-time-snapshot nature).
+      None of these blocked the tag; they're exactly what "known
+      issues" in a v1.0 changelog are for.
 
 ## Future (v2.0 ideas)
 
