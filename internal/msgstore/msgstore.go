@@ -13,11 +13,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
+	"time"
 )
 
-// MaxPerChat caps how many recent messages are kept per chat.
+// MaxPerChat is how many recent messages are always kept per chat; more
+// are kept when needed to cover RetainFor.
 const MaxPerChat = 50
+
+// RetainFor is how far back every message is kept, even beyond MaxPerChat.
+const RetainFor = 48 * time.Hour
 
 // Message is one stored message.
 type Message struct {
@@ -48,8 +54,7 @@ func New(dataDir string) *Store {
 	return &Store{path: filepath.Join(dataDir, "messages.json")}
 }
 
-// Append adds msg to its chat's history, trimming to the MaxPerChat most
-// recent messages for that chat.
+// Append adds msg to its chat's history, trimming it per trim.
 func (s *Store) Append(msg Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -58,14 +63,62 @@ func (s *Store) Append(msg Message) error {
 	if err != nil {
 		return err
 	}
-
-	chatMsgs := append(all[msg.ChatJID], msg)
-	if len(chatMsgs) > MaxPerChat {
-		chatMsgs = chatMsgs[len(chatMsgs)-MaxPerChat:]
-	}
-	all[msg.ChatJID] = chatMsgs
-
+	all[msg.ChatJID] = trim(append(all[msg.ChatJID], msg), time.Now())
 	return s.save(all)
+}
+
+// AppendMany merges msgs into their chats' histories with a single file
+// read and write, skipping IDs already stored and keeping each chat in
+// timestamp order (history syncs arrive out of order).
+func (s *Store) AppendMany(msgs []Message) error {
+	if len(msgs) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	all, err := s.load()
+	if err != nil {
+		return err
+	}
+	touched := map[string]bool{}
+	for _, msg := range msgs {
+		if msg.ID != "" && hasID(all[msg.ChatJID], msg.ID) {
+			continue
+		}
+		all[msg.ChatJID] = append(all[msg.ChatJID], msg)
+		touched[msg.ChatJID] = true
+	}
+	now := time.Now()
+	for jid := range touched {
+		chatMsgs := all[jid]
+		sort.SliceStable(chatMsgs, func(i, j int) bool { return chatMsgs[i].Timestamp < chatMsgs[j].Timestamp })
+		all[jid] = trim(chatMsgs, now)
+	}
+	return s.save(all)
+}
+
+func hasID(msgs []Message, id string) bool {
+	for _, m := range msgs {
+		if m.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// trim keeps the last MaxPerChat messages, plus any older ones still
+// within RetainFor of now. msgs must be oldest first.
+func trim(msgs []Message, now time.Time) []Message {
+	if len(msgs) <= MaxPerChat {
+		return msgs
+	}
+	cutoff := now.Add(-RetainFor).UnixMilli()
+	keepFrom := len(msgs) - MaxPerChat
+	for keepFrom > 0 && msgs[keepFrom-1].Timestamp >= cutoff {
+		keepFrom--
+	}
+	return msgs[keepFrom:]
 }
 
 // List returns chatJID's stored messages, oldest first (matching the

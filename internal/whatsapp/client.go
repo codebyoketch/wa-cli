@@ -20,6 +20,7 @@ import (
 
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -111,6 +112,21 @@ func (c *Client) ingestHistorySync(evt *events.HistorySync) {
 	if evt.Data == nil {
 		return
 	}
+	// Keep message bodies from the last msgstore.RetainFor; an on-demand
+	// sync is a backfill we asked for, so keep all of it.
+	cutoff := time.Now().Add(-msgstore.RetainFor)
+	if evt.Data.GetSyncType() == waHistorySync.HistorySync_ON_DEMAND {
+		cutoff = time.Time{}
+	}
+	var toStore []msgstore.Message
+	defer func() {
+		if c.msgs != nil {
+			if err := c.msgs.AppendMany(toStore); err != nil {
+				c.log.Warnf("msgstore history append failed: %v", err)
+			}
+		}
+	}()
+
 	for _, conv := range evt.Data.GetConversations() {
 		jid := conv.GetID()
 		if jid == "" || isPseudoChat(jid) {
@@ -119,6 +135,8 @@ func (c *Client) ingestHistorySync(evt *events.HistorySync) {
 
 		name := conv.GetName()
 		msgs := conv.GetMessages()
+		c.storeHistoryPushNames(jid, msgs)
+		toStore = append(toStore, c.historyMessages(jid, msgs, cutoff)...)
 
 		// Skip pure noise: no name and no message history at all. These
 		// show up as bare @lid conversation stubs (e.g. group members
@@ -128,15 +146,19 @@ func (c *Client) ingestHistorySync(evt *events.HistorySync) {
 			continue
 		}
 
-		var lastAt int64
+		// History lists messages newest first, so take the maximum rather
+		// than trusting either end, and also consider the conversation's
+		// own timestamps (what WhatsApp itself sorts chats by).
+		var newest uint64
 		var preview string
-		if len(msgs) > 0 {
-			last := msgs[len(msgs)-1].GetMessage()
-			if ts := last.GetMessageTimestamp(); ts > 0 {
-				lastAt = int64(ts) * 1000
+		for _, hm := range msgs {
+			if ts := hm.GetMessage().GetMessageTimestamp(); ts > newest {
+				newest = ts
+				preview = extractPreview(hm.GetMessage().GetMessage())
 			}
-			preview = extractPreview(last.GetMessage())
 		}
+		newest = max(newest, conv.GetLastMsgTimestamp(), conv.GetConversationTimestamp())
+		lastAt := int64(newest) * 1000
 
 		err := c.chats.Upsert(chatstore.Chat{
 			JID:                jid,
@@ -148,6 +170,74 @@ func (c *Client) ingestHistorySync(evt *events.HistorySync) {
 		})
 		if err != nil {
 			c.log.Warnf("chatstore upsert failed for %s: %v", jid, err)
+		}
+	}
+}
+
+// historyMessages converts a history-sync conversation's messages newer
+// than cutoff into stored messages, the same way live ones are stored.
+func (c *Client) historyMessages(chatJID string, msgs []*waHistorySync.HistorySyncMsg, cutoff time.Time) []msgstore.Message {
+	chat, err := types.ParseJID(chatJID)
+	if err != nil {
+		return nil
+	}
+	var out []msgstore.Message
+	for _, hm := range msgs {
+		wmi := hm.GetMessage()
+		if time.Unix(int64(wmi.GetMessageTimestamp()), 0).Before(cutoff) {
+			continue
+		}
+		evt, err := c.WA.ParseWebMessage(chat, wmi)
+		if err != nil || isProtocolOnly(evt.Message) {
+			continue
+		}
+		out = append(out, storedMessage(evt))
+	}
+	return out
+}
+
+// RequestOlderMessages asks your phone for up to count messages sent
+// before oldest (the oldest one stored for its chat). The phone answers
+// later with an on-demand history sync, which ingestHistorySync stores.
+// Needs the phone to be online.
+func (c *Client) RequestOlderMessages(ctx context.Context, oldest msgstore.Message, count int) error {
+	chat, err := types.ParseJID(oldest.ChatJID)
+	if err != nil {
+		return err
+	}
+	req := c.WA.BuildHistorySyncRequest(&types.MessageInfo{
+		MessageSource: types.MessageSource{Chat: chat, IsFromMe: oldest.FromMe},
+		ID:            oldest.ID,
+		Timestamp:     time.UnixMilli(oldest.Timestamp),
+	}, count)
+	_, err = c.WA.SendPeerMessage(ctx, req)
+	return err
+}
+
+// storeHistoryPushNames saves the sender push name carried on each
+// history-sync message into whatsmeow's contact store. whatsmeow only does
+// this itself for live messages and the separate push-name sync, so
+// without it most people you haven't saved stay nameless.
+func (c *Client) storeHistoryPushNames(chatJID string, msgs []*waHistorySync.HistorySyncMsg) {
+	ctx := context.Background()
+	for _, hm := range msgs {
+		wmi := hm.GetMessage()
+		push := wmi.GetPushName()
+		if push == "" || wmi.GetKey().GetFromMe() {
+			continue
+		}
+		sender := chatJID
+		if p := wmi.GetParticipant(); p != "" {
+			sender = p
+		} else if p := wmi.GetKey().GetParticipant(); p != "" {
+			sender = p
+		}
+		jid, err := types.ParseJID(sender)
+		if err != nil || jid.Server == types.GroupServer {
+			continue
+		}
+		if _, _, err := c.WA.Store.Contacts.PutPushName(ctx, jid.ToNonAD(), push); err != nil {
+			c.log.Warnf("storing history push name for %s failed: %v", jid, err)
 		}
 	}
 }
@@ -174,6 +264,11 @@ func isPseudoChat(jid string) bool {
 func (c *Client) ingestMessage(evt *events.Message) {
 	jid := evt.Info.Chat.String()
 	if isPseudoChat(jid) {
+		return
+	}
+	// Key distribution, history-sync notices and similar plumbing aren't
+	// messages: don't store them, count them as unread, or notify.
+	if isProtocolOnly(evt.Message) {
 		return
 	}
 
@@ -217,29 +312,7 @@ func (c *Client) ingestMessage(evt *events.Message) {
 	}
 
 	if c.msgs != nil {
-		sender := evt.Info.Sender.String()
-		if evt.Info.IsFromMe {
-			sender = "me"
-		}
-
-		var raw string
-		if evt.Message != nil {
-			if b, err := proto.Marshal(evt.Message); err == nil {
-				raw = base64.StdEncoding.EncodeToString(b)
-			}
-		}
-
-		stored := msgstore.Message{
-			ID:        evt.Info.ID,
-			ChatJID:   jid,
-			SenderJID: sender,
-			Timestamp: evt.Info.Timestamp.UnixMilli(),
-			Text:      text,
-			FromMe:    evt.Info.IsFromMe,
-			MediaType: mediaType,
-			RawProto:  raw,
-		}
-
+		stored := storedMessage(evt)
 		if err := c.msgs.Append(stored); err != nil {
 			c.log.Warnf("msgstore append failed for %s: %v", jid, err)
 		} else if c.onIncoming != nil {
@@ -247,17 +320,26 @@ func (c *Client) ingestMessage(evt *events.Message) {
 		}
 	}
 
-	if !evt.Info.IsFromMe && c.notifyEnabled {
+	// Messages older than a couple of minutes are an offline backlog being
+	// delivered on reconnect, not new — don't pop one toast per message.
+	if !evt.Info.IsFromMe && c.notifyEnabled && time.Since(evt.Info.Timestamp) < 2*time.Minute {
+		ctx := context.Background()
 		shouldNotify := c.notifyGroups || !evt.Info.IsGroup
+		var chatName string
 		if shouldNotify && c.chats != nil {
-			if chat, ok, err := c.chats.Get(jid); err == nil && ok && chat.Muted {
-				shouldNotify = false
+			if chat, ok, err := c.chats.Get(jid); err == nil && ok {
+				shouldNotify = !chat.Muted
+				chatName = chat.Name
 			}
 		}
+		// Chats muted on the phone, synced by whatsmeow via app state.
+		if settings, err := c.WA.Store.ChatSettings.GetChatSettings(ctx, evt.Info.Chat); err == nil && settings.MutedUntil.After(time.Now()) {
+			shouldNotify = false
+		}
 		if shouldNotify {
-			title := evt.Info.PushName
-			if title == "" {
-				title = jid
+			title := c.ResolveName(ctx, evt.Info.Sender.String())
+			if evt.Info.IsGroup && chatName != "" {
+				title += " · " + chatName
 			}
 			body := "New message"
 			if c.notifyShowPreview {
@@ -270,10 +352,40 @@ func (c *Client) ingestMessage(evt *events.Message) {
 					body = text
 				}
 			}
-			if err := notify.Send(title, body); err != nil {
-				c.log.Warnf("desktop notification failed: %v", err)
-			}
+			// In the background: the OS toast call can be slow, and this
+			// runs on whatsmeow's event goroutine.
+			go func() {
+				if err := notify.Send(title, body); err != nil {
+					c.log.Warnf("desktop notification failed: %v", err)
+				}
+			}()
 		}
+	}
+}
+
+// storedMessage converts a message event into its msgstore form. Used for
+// both live messages and history-sync messages (via ParseWebMessage).
+func storedMessage(evt *events.Message) msgstore.Message {
+	sender := evt.Info.Sender.String()
+	if evt.Info.IsFromMe {
+		sender = "me"
+	}
+	var raw string
+	if evt.Message != nil {
+		if b, err := proto.Marshal(evt.Message); err == nil {
+			raw = base64.StdEncoding.EncodeToString(b)
+		}
+	}
+	mediaType, text := classifyMessage(evt.Message)
+	return msgstore.Message{
+		ID:        evt.Info.ID,
+		ChatJID:   evt.Info.Chat.String(),
+		SenderJID: sender,
+		Timestamp: evt.Info.Timestamp.UnixMilli(),
+		Text:      text,
+		FromMe:    evt.Info.IsFromMe,
+		MediaType: mediaType,
+		RawProto:  raw,
 	}
 }
 

@@ -48,6 +48,21 @@ func TestUpsert_PartialUpdateDoesNotClobber(t *testing.T) {
 	}
 }
 
+func TestUpsert_LastMessageAtNeverMovesBackwards(t *testing.T) {
+	s := New(t.TempDir())
+	jid := "a@s.whatsapp.net"
+	_ = s.Upsert(Chat{JID: jid, LastMessageAt: 200, LastMessagePreview: "new"})
+	_ = s.Upsert(Chat{JID: jid, LastMessageAt: 100, LastMessagePreview: "old"})
+	got, _, _ := s.Get(jid)
+	if got.LastMessageAt != 200 || got.LastMessagePreview != "new" {
+		t.Fatalf("older update moved chat back: %d %q", got.LastMessageAt, got.LastMessagePreview)
+	}
+	_ = s.Upsert(Chat{JID: jid, LastMessageAt: 300, LastMessagePreview: "newest"})
+	if got, _, _ := s.Get(jid); got.LastMessageAt != 300 {
+		t.Fatalf("newer update ignored: %d", got.LastMessageAt)
+	}
+}
+
 func TestList_SortedByRecency(t *testing.T) {
 	s := New(t.TempDir())
 	_ = s.Upsert(Chat{JID: "old@s.whatsapp.net", Name: "Old", LastMessageAt: 100})

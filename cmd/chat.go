@@ -130,17 +130,30 @@ var chatOpenCmd = &cobra.Command{
 			fmt.Println("No local message history yet. Run 'wa watch' for a while, or send/receive a message, to build it up.")
 			return nil
 		}
+		// Local store only (no connection): resolves sender names and
+		// mentions, and renders/hides non-text message types.
+		ctx := context.Background()
+		container, err := store.Open(ctx, a.Config.DataDir, waLog.Stdout("Database", "WARN", true))
+		if err != nil {
+			return err
+		}
+		client, err := whatsapp.New(ctx, container, waLog.Noop, nil, nil)
+		if err != nil {
+			return err
+		}
 		for i, m := range msgs {
-			who := "them"
-			if m.FromMe {
-				who = "you"
+			// Hidden messages keep their slot, so [n] still matches what
+			// 'wa chat reply' and 'wa chat forward' look up.
+			text, hidden := client.DisplayText(ctx, m)
+			if hidden {
+				continue
 			}
-			text := m.Text
+			who := "them"
 			switch {
-			case m.MediaType != "" && text != "":
-				text = fmt.Sprintf("[%s] %s", m.MediaType, text)
-			case m.MediaType != "":
-				text = fmt.Sprintf("[%s]", m.MediaType)
+			case m.FromMe:
+				who = "you"
+			case chat.IsGroup:
+				who = client.ResolveName(ctx, m.SenderJID)
 			}
 			ts := time.UnixMilli(m.Timestamp).Local().Format("15:04:05")
 			fmt.Printf("[%d] (%s) %s: %s\n", i+1, ts, who, text)

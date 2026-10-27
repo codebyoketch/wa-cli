@@ -1,6 +1,49 @@
 package msgstore
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+	"time"
+)
+
+func TestAppend_KeepsRetainForBeyondMax(t *testing.T) {
+	s := New(t.TempDir())
+	jid := "g@g.us"
+	now := time.Now()
+	// 10 messages older than RetainFor, then MaxPerChat+20 from the last hour.
+	for i := 0; i < 10; i++ {
+		_ = s.Append(Message{ID: fmt.Sprint("old", i), ChatJID: jid, Timestamp: now.Add(-RetainFor - time.Hour).UnixMilli()})
+	}
+	for i := 0; i < MaxPerChat+20; i++ {
+		_ = s.Append(Message{ID: fmt.Sprint("new", i), ChatJID: jid, Timestamp: now.Add(-time.Hour).UnixMilli() + int64(i)})
+	}
+	msgs, _ := s.List(jid)
+	if len(msgs) != MaxPerChat+20 || msgs[0].ID != "new0" {
+		t.Fatalf("got %d messages starting %q; want all %d recent ones, old dropped", len(msgs), msgs[0].ID, MaxPerChat+20)
+	}
+}
+
+func TestAppendMany_SortsAndSkipsDuplicates(t *testing.T) {
+	s := New(t.TempDir())
+	jid := "a@s.whatsapp.net"
+	_ = s.Append(Message{ID: "b", ChatJID: jid, Timestamp: 200})
+	err := s.AppendMany([]Message{
+		{ID: "c", ChatJID: jid, Timestamp: 300},
+		{ID: "a", ChatJID: jid, Timestamp: 100},
+		{ID: "b", ChatJID: jid, Timestamp: 200}, // already stored
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs, _ := s.List(jid)
+	var ids string
+	for _, m := range msgs {
+		ids += m.ID
+	}
+	if ids != "abc" {
+		t.Fatalf("got order %q, want \"abc\"", ids)
+	}
+}
 
 func TestAppendThenList(t *testing.T) {
 	s := New(t.TempDir())

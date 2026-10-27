@@ -64,7 +64,9 @@ func (s *Store) Upsert(c Chat) error {
 		if c.Name == "" {
 			c.Name = existing.Name
 		}
-		if c.LastMessageAt == 0 {
+		// Only ever move forward: a history batch with older messages
+		// arriving after live ones must not push the chat down the list.
+		if c.LastMessageAt <= existing.LastMessageAt {
 			c.LastMessageAt = existing.LastMessageAt
 			c.LastMessagePreview = existing.LastMessagePreview
 		}
