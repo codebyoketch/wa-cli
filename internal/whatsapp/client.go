@@ -734,13 +734,29 @@ func (c *Client) SendText(ctx context.Context, jid types.JID, text string) (stri
 	return resp.ID, nil
 }
 
+// replyParticipant returns the JID to place in a reply's
+// ContextInfo.Participant. Locally-recorded outbound messages carry the
+// sentinel "me" (see cmd.recordSentMessage) rather than a JID, and
+// WhatsApp drops the quote context when Participant is not a JID, so those
+// resolve to the account's own ID. An empty result means no participant
+// could be determined; the reply still sends, just without a quote.
+func replyParticipant(senderJID string, ownID *types.JID) string {
+	if senderJID != "me" && senderJID != "" {
+		return senderJID
+	}
+	if ownID != nil {
+		return ownID.ToNonAD().String()
+	}
+	return ""
+}
+
 // SendReply sends text to jid as a quoted reply to quoted. If quoted's
 // original content couldn't be reconstructed (e.g. an old or unsupported
 // message type), the reply is still sent, just without the visible quote.
 func (c *Client) SendReply(ctx context.Context, jid types.JID, text string, quoted msgstore.Message) (string, error) {
 	ctxInfo := &waProto.ContextInfo{
 		StanzaID:    proto.String(quoted.ID),
-		Participant: proto.String(quoted.SenderJID),
+		Participant: proto.String(replyParticipant(quoted.SenderJID, c.WA.Store.ID)),
 	}
 	if quotedMsg := decodeRawProto(quoted.RawProto); quotedMsg != nil {
 		ctxInfo.QuotedMessage = quotedMsg

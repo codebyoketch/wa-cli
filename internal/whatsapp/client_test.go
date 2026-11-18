@@ -514,3 +514,31 @@ func TestIngestMessage_NilStoresDoNotPanic(t *testing.T) {
 	}
 	c.ingestMessage(evt) // should not panic with nil chats/msgs
 }
+
+func TestReplyParticipant(t *testing.T) {
+	own := types.NewJID("919188589920", types.DefaultUserServer)
+	ownWithDevice := own
+	ownWithDevice.Device = 17
+
+	tests := []struct {
+		name      string
+		senderJID string
+		ownID     *types.JID
+		want      string
+	}{
+		{"other sender passes through", "918301939350@s.whatsapp.net", &own, "918301939350@s.whatsapp.net"},
+		{"group sender passes through", "919645250651@s.whatsapp.net", &own, "919645250651@s.whatsapp.net"},
+		{"own message sentinel resolves to own id", "me", &own, "919188589920@s.whatsapp.net"},
+		{"own message sentinel drops device suffix", "me", &ownWithDevice, "919188589920@s.whatsapp.net"},
+		{"empty sender resolves to own id", "", &own, "919188589920@s.whatsapp.net"},
+		{"sentinel without a known own id yields empty", "me", nil, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := replyParticipant(tt.senderJID, tt.ownID); got != tt.want {
+				t.Errorf("replyParticipant(%q, %v) = %q, want %q", tt.senderJID, tt.ownID, got, tt.want)
+			}
+		})
+	}
+}
