@@ -516,7 +516,7 @@ func TestIngestMessage_NilStoresDoNotPanic(t *testing.T) {
 }
 
 func TestReplyParticipant(t *testing.T) {
-	own := types.NewJID("919188589920", types.DefaultUserServer)
+	own := types.NewJID("15550000001", types.DefaultUserServer)
 	ownWithDevice := own
 	ownWithDevice.Device = 17
 
@@ -526,12 +526,12 @@ func TestReplyParticipant(t *testing.T) {
 		ownID     *types.JID
 		want      string
 	}{
-		{"other sender passes through", "918301939350@s.whatsapp.net", &own, "918301939350@s.whatsapp.net"},
-		{"other sender drops device suffix", "918301939350:17@s.whatsapp.net", &own, "918301939350@s.whatsapp.net"},
-		{"lid sender passes through", "189807657496591@lid", &own, "189807657496591@lid"},
-		{"own message sentinel resolves to own id", SenderMe, &own, "919188589920@s.whatsapp.net"},
-		{"own message sentinel drops device suffix", SenderMe, &ownWithDevice, "919188589920@s.whatsapp.net"},
-		{"empty sender resolves to own id", "", &own, "919188589920@s.whatsapp.net"},
+		{"other sender passes through", "15550000002@s.whatsapp.net", &own, "15550000002@s.whatsapp.net"},
+		{"other sender drops device suffix", "15550000002:17@s.whatsapp.net", &own, "15550000002@s.whatsapp.net"},
+		{"lid sender passes through", "100000000000001@lid", &own, "100000000000001@lid"},
+		{"own message sentinel resolves to own id", SenderMe, &own, "15550000001@s.whatsapp.net"},
+		{"own message sentinel drops device suffix", SenderMe, &ownWithDevice, "15550000001@s.whatsapp.net"},
+		{"empty sender resolves to own id", "", &own, "15550000001@s.whatsapp.net"},
 		{"sentinel without a known own id yields empty", SenderMe, nil, ""},
 	}
 
@@ -545,7 +545,7 @@ func TestReplyParticipant(t *testing.T) {
 }
 
 func TestBuildReplyContext(t *testing.T) {
-	own := types.NewJID("919188589920", types.DefaultUserServer)
+	own := types.NewJID("15550000001", types.DefaultUserServer)
 	raw := base64.StdEncoding.EncodeToString(mustMarshal(&waProto.Message{Conversation: proto.String("original")}))
 
 	t.Run("own message quotes with the account id", func(t *testing.T) {
@@ -553,8 +553,8 @@ func TestBuildReplyContext(t *testing.T) {
 		if got := ci.GetStanzaID(); got != "ABC" {
 			t.Errorf("StanzaID = %q, want %q", got, "ABC")
 		}
-		if got := ci.GetParticipant(); got != "919188589920@s.whatsapp.net" {
-			t.Errorf("Participant = %q, want %q", got, "919188589920@s.whatsapp.net")
+		if got := ci.GetParticipant(); got != "15550000001@s.whatsapp.net" {
+			t.Errorf("Participant = %q, want %q", got, "15550000001@s.whatsapp.net")
 		}
 		if got := ci.GetQuotedMessage().GetConversation(); got != "original" {
 			t.Errorf("QuotedMessage = %q, want %q", got, "original")
