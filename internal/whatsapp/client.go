@@ -219,7 +219,7 @@ func (c *Client) ingestMessage(evt *events.Message) {
 	if c.msgs != nil {
 		sender := evt.Info.Sender.String()
 		if evt.Info.IsFromMe {
-			sender = "me"
+			sender = SenderMe
 		}
 
 		var raw string
@@ -734,33 +734,48 @@ func (c *Client) SendText(ctx context.Context, jid types.JID, text string) (stri
 	return resp.ID, nil
 }
 
+// SenderMe is the sender JID recorded for messages that came from this
+// account, whether sent here or from another of your devices.
+const SenderMe = "me"
+
 // replyParticipant returns the JID to place in a reply's
-// ContextInfo.Participant. Locally-recorded outbound messages carry the
-// sentinel "me" (see cmd.recordSentMessage) rather than a JID, and
-// WhatsApp drops the quote context when Participant is not a JID, so those
-// resolve to the account's own ID. An empty result means no participant
-// could be determined; the reply still sends, just without a quote.
+// ContextInfo.Participant. Messages from this account are stored with the
+// sentinel SenderMe rather than a JID, and WhatsApp drops the quote
+// context when Participant is not a JID, so those resolve to the account's
+// own ID. Other senders can carry a device suffix, which is stripped. An
+// empty result means no participant could be determined; the reply still
+// sends, just without a quote.
 func replyParticipant(senderJID string, ownID *types.JID) string {
-	if senderJID != "me" && senderJID != "" {
-		return senderJID
-	}
-	if ownID != nil {
+	if senderJID == SenderMe || senderJID == "" {
+		if ownID == nil {
+			return ""
+		}
 		return ownID.ToNonAD().String()
 	}
-	return ""
+	if jid, err := types.ParseJID(senderJID); err == nil {
+		return jid.ToNonAD().String()
+	}
+	return senderJID
+}
+
+// buildReplyContext assembles the quote context for quoted, omitting
+// Participant when no JID could be determined for the original sender.
+func buildReplyContext(quoted msgstore.Message, ownID *types.JID) *waProto.ContextInfo {
+	ci := &waProto.ContextInfo{StanzaID: proto.String(quoted.ID)}
+	if participant := replyParticipant(quoted.SenderJID, ownID); participant != "" {
+		ci.Participant = proto.String(participant)
+	}
+	if quotedMsg := decodeRawProto(quoted.RawProto); quotedMsg != nil {
+		ci.QuotedMessage = quotedMsg
+	}
+	return ci
 }
 
 // SendReply sends text to jid as a quoted reply to quoted. If quoted's
 // original content couldn't be reconstructed (e.g. an old or unsupported
 // message type), the reply is still sent, just without the visible quote.
 func (c *Client) SendReply(ctx context.Context, jid types.JID, text string, quoted msgstore.Message) (string, error) {
-	ctxInfo := &waProto.ContextInfo{
-		StanzaID:    proto.String(quoted.ID),
-		Participant: proto.String(replyParticipant(quoted.SenderJID, c.WA.Store.ID)),
-	}
-	if quotedMsg := decodeRawProto(quoted.RawProto); quotedMsg != nil {
-		ctxInfo.QuotedMessage = quotedMsg
-	}
+	ctxInfo := buildReplyContext(quoted, c.WA.Store.ID)
 
 	msg := &waProto.Message{
 		ExtendedTextMessage: &waProto.ExtendedTextMessage{
@@ -920,7 +935,7 @@ func (c *Client) sendMedia(ctx context.Context, jid types.JID, msg *waProto.Mess
 		err := c.msgs.Append(msgstore.Message{
 			ID:        resp.ID,
 			ChatJID:   jid.String(),
-			SenderJID: "me",
+			SenderJID: SenderMe,
 			Timestamp: time.Now().UnixMilli(),
 			Text:      caption,
 			FromMe:    true,

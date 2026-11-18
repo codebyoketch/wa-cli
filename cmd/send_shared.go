@@ -179,7 +179,7 @@ func recordSentMessage(ms *msgstore.Store, jid types.JID, msgID, text string) {
 	err := ms.Append(msgstore.Message{
 		ID:        msgID,
 		ChatJID:   jid.String(),
-		SenderJID: "me",
+		SenderJID: whatsapp.SenderMe,
 		Timestamp: time.Now().UnixMilli(),
 		Text:      text,
 		FromMe:    true,

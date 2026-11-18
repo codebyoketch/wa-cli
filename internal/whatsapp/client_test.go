@@ -527,11 +527,12 @@ func TestReplyParticipant(t *testing.T) {
 		want      string
 	}{
 		{"other sender passes through", "918301939350@s.whatsapp.net", &own, "918301939350@s.whatsapp.net"},
-		{"group sender passes through", "919645250651@s.whatsapp.net", &own, "919645250651@s.whatsapp.net"},
-		{"own message sentinel resolves to own id", "me", &own, "919188589920@s.whatsapp.net"},
-		{"own message sentinel drops device suffix", "me", &ownWithDevice, "919188589920@s.whatsapp.net"},
+		{"other sender drops device suffix", "918301939350:17@s.whatsapp.net", &own, "918301939350@s.whatsapp.net"},
+		{"lid sender passes through", "189807657496591@lid", &own, "189807657496591@lid"},
+		{"own message sentinel resolves to own id", SenderMe, &own, "919188589920@s.whatsapp.net"},
+		{"own message sentinel drops device suffix", SenderMe, &ownWithDevice, "919188589920@s.whatsapp.net"},
 		{"empty sender resolves to own id", "", &own, "919188589920@s.whatsapp.net"},
-		{"sentinel without a known own id yields empty", "me", nil, ""},
+		{"sentinel without a known own id yields empty", SenderMe, nil, ""},
 	}
 
 	for _, tt := range tests {
@@ -541,4 +542,37 @@ func TestReplyParticipant(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildReplyContext(t *testing.T) {
+	own := types.NewJID("919188589920", types.DefaultUserServer)
+	raw := base64.StdEncoding.EncodeToString(mustMarshal(&waProto.Message{Conversation: proto.String("original")}))
+
+	t.Run("own message quotes with the account id", func(t *testing.T) {
+		ci := buildReplyContext(msgstore.Message{ID: "ABC", SenderJID: SenderMe, RawProto: raw}, &own)
+		if got := ci.GetStanzaID(); got != "ABC" {
+			t.Errorf("StanzaID = %q, want %q", got, "ABC")
+		}
+		if got := ci.GetParticipant(); got != "919188589920@s.whatsapp.net" {
+			t.Errorf("Participant = %q, want %q", got, "919188589920@s.whatsapp.net")
+		}
+		if got := ci.GetQuotedMessage().GetConversation(); got != "original" {
+			t.Errorf("QuotedMessage = %q, want %q", got, "original")
+		}
+	})
+
+	t.Run("unknown sender leaves participant unset", func(t *testing.T) {
+		ci := buildReplyContext(msgstore.Message{ID: "ABC", SenderJID: SenderMe}, nil)
+		if ci.Participant != nil {
+			t.Errorf("Participant = %q, want unset", ci.GetParticipant())
+		}
+	})
+}
+
+func mustMarshal(m *waProto.Message) []byte {
+	b, err := proto.Marshal(m)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
